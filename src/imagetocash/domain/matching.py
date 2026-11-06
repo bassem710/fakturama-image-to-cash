@@ -122,7 +122,17 @@ class RecordMatchPolicy:
         conflicting_rows = tuple(r for r in rows if self._fields_equal(wanted, r, self.identity_fields))
         if conflicting_rows:
             return ConflictingMatch(conflicting_rows)
+        # Duplicate guard: a row that mentions the identity anywhere (e.g. a misread column) is a
+        # reason to stop, never to create a second record.
+        mentioning = tuple(r for r in rows if self._mentions_identity(wanted, r))
+        if mentioning:
+            return ConflictingMatch(mentioning)
         return NoMatch()
+
+    def _mentions_identity(self, wanted: Record, row: Record) -> bool:
+        joined = normalize_ocr_text(" ".join(row.values()))
+        identity = [normalize_ocr_text(wanted.get(f, "")) for f in self.identity_fields]
+        return all(value and value in joined for value in identity)
 
 
 # Spec 2.3: Company, First Name, Name, ZIP and City must all match.

@@ -33,7 +33,19 @@ class MasterDataListScreen:
         pane = self._view()
         type_into(locate(pane, self._ctx.selectors.locator("lists", "search")), text, commit_key="")
         columns = dict(self._ctx.selectors.value("lists", self._columns_key))
-        return self._ctx.read_table_rows(self._ctx.table_in(pane), columns)
+        table = self._ctx.table_in(pane)
+        wanted = normalize_ocr_text(text)
+
+        def filtered() -> list[tuple[dict[str, str], OcrTableRow]] | None:
+            """The list re-filters asynchronously (seen live): accept a read only once every row
+            contains the search text, so a stale, unfiltered frame is never taken as the answer."""
+            rows = self._ctx.read_table_rows(table, columns)
+            ok = all(wanted in normalize_ocr_text(" ".join(record.values())) for record, _ in rows)
+            return rows if ok else None
+
+        return wait_until(
+            filtered, timeout=self._ctx.settings.timeouts.list_stable, what=f"the list filtered by {text!r}"
+        )
 
     def create_new(self) -> None:
         """The green + at the upper right of the list: the view's own 'Create…' toolbar button."""

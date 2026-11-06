@@ -78,3 +78,10 @@ def test_payment_code_mapping() -> None:
     with pytest.raises(ManualReviewRequired) as stop:
         payment_code_for("PayPal")
     assert stop.value.spec_step == "2.10.4"
+
+
+def test_row_mentioning_the_identity_blocks_creation() -> None:
+    # e.g. the Name column was misread empty but the row clearly is 'VAT 19%'
+    row = {"name": "", "description": "VAT 19%", "value": "19.00 %", "code": "S"}
+    wanted = {"name": "VAT 19%", "value": "19", "code": "S"}
+    assert isinstance(VAT_MATCH_POLICY.ocr_tolerant().evaluate(wanted, [row]), ConflictingMatch)
