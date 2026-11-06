@@ -7,7 +7,7 @@ from typing import Any
 
 from pywinauto import keyboard
 
-from imagetocash.automation.input import read_value, select_combo_option, set_and_verify, type_into
+from imagetocash.automation.input import read_value, select_combo_option, set_and_verify
 from imagetocash.automation.locators import locate
 from imagetocash.automation.ocr_table import OcrTableRow
 from imagetocash.automation.waiting import WaitTimeout, wait_until
@@ -31,7 +31,8 @@ class MasterDataListScreen:
 
     def _search_rows(self, text: str) -> list[tuple[dict[str, str], OcrTableRow]]:
         pane = self._view()
-        type_into(locate(pane, self._ctx.selectors.locator("lists", "search")), text, commit_key="")
+        box = locate(pane, self._ctx.selectors.locator("lists", "search"))
+        set_and_verify(box, text, spec_step="-", field_name="list search")  # typed text must land
         columns = dict(self._ctx.selectors.value("lists", self._columns_key))
         table = self._ctx.table_in(pane)
         wanted = normalize_ocr_text(text)
@@ -44,7 +45,10 @@ class MasterDataListScreen:
             return rows if ok else None
 
         return wait_until(
-            filtered, timeout=self._ctx.settings.timeouts.list_stable, what=f"the list filtered by {text!r}"
+            filtered,
+            done=lambda rows: rows is not None,
+            timeout=self._ctx.settings.timeouts.list_stable,
+            what=f"the list filtered by {text!r}",
         )
 
     def create_new(self) -> None:

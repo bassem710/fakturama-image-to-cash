@@ -32,11 +32,20 @@ def type_into(element: Any, text: str, commit_key: str = "") -> None:
     listeners, so Fakturama recalculates exactly as for a human user. No commit key by default:
     several Fakturama fields are multi-line, where Tab inserts a tab character (seen in discovery)."""
     element.set_focus()
+    if not _has_focus(element):  # UIA focus did not take (seen live): click inside the field
+        element.click_input()
     keyboard.send_keys("^a{DELETE}", pause=0.02)
     if text:
         keyboard.send_keys(escape_send_keys(text), with_spaces=True, pause=0.01)
     if commit_key:
         keyboard.send_keys(commit_key, pause=0.02)
+
+
+def _has_focus(element: Any) -> bool:
+    try:
+        return bool(element.has_keyboard_focus())
+    except Exception:
+        return False
 
 
 def exact_text(value: str) -> str:

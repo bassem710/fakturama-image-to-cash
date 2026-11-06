@@ -6,7 +6,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from imagetocash.automation.input import type_into
+from imagetocash.automation.input import set_and_verify
 from imagetocash.automation.locators import locate
 from imagetocash.automation.ocr_table import OcrTableRow
 from imagetocash.automation.screen_ocr import ScreenRect
@@ -24,7 +24,7 @@ class SelectionDialogScreen:
 
     def search(self, text: str) -> list[dict[str, str]]:
         search_box = locate(self._dialog, self._ctx.selectors.locator(S, "search"))
-        type_into(search_box, text, commit_key="")
+        set_and_verify(search_box, text, spec_step="-", field_name=f"{self._title} search")
         self._rows = self._ctx.read_table_rows(self._ctx.table_in(self._dialog), self._columns)
         return [dict(record) for record, _ in self._rows]
 
