@@ -8,12 +8,14 @@ from typing import Any
 
 from pywinauto import keyboard
 
-from imagetocash.automation.focus import has_keyboard_focus
+from imagetocash.automation.focus import focus, has_keyboard_focus
+from imagetocash.automation.locators import find_first
 from imagetocash.automation.waiting import WaitTimeout, wait_until
 from imagetocash.domain.matching import normalize_text
 from imagetocash.domain.review import ManualReviewRequired, ReviewReason
 
 _SEND_KEYS_SPECIALS = set("+^%~(){}[]")
+READ_BACK_SECONDS = 1.0  # how long a typed value may take to appear in the field
 
 
 def escape_send_keys(text: str) -> str:
@@ -66,9 +68,16 @@ def set_and_verify(
     observed = ""
     for _ in range(attempts):
         type_into(element, value)
-        observed = reader(element)
-        if normalize(observed) == normalize(value):
-            return observed
+        # Found live: a busy field (E-Mail validates per key) can lag the last keystrokes, so the
+        # read-back polls briefly before calling it a mismatch.
+        def settled() -> str | None:
+            text = reader(element)
+            return text if normalize(text) == normalize(value) else None
+
+        try:
+            return wait_until(settled, timeout=READ_BACK_SECONDS, what=field_name, done=lambda _: True, interval=0.05)
+        except WaitTimeout:
+            observed = reader(element)
     raise ManualReviewRequired(
         spec_step, ReviewReason.VALUE_MISMATCH, f"{field_name}: typed {value!r}, field shows {observed!r}"
     )
@@ -120,7 +129,12 @@ def select_combo_option(
     VAT 'Tax-free' while its editor showed 'VAT 19%'. So the choice is made the way a user makes it:
     keyboard Up/Down from the current option (fires Selection), else a click on the option element
     inside the expanded dropdown (element-relative, never a fixed point). `options` reuses a list the
-    caller has just read from this combo (saves a second expand)."""
+    caller has just read from this combo (saves a second expand).
+
+    First choice is a search: type the option's letters until the combo shows it (a few keys instead of
+    up to ~80 Down presses for 'Germany' in Country), then one arrow away and back. Found live: a
+    selection made by letters alone left the binding on an earlier prefix hit (Germany shown, Georgia
+    saved); an arrow-key selection always reaches it. Up/Down from the current option is the fallback."""
     if normalize_text(read_value(combo)) == normalize_text(option):
         return
     options = list(options) if options is not None else combo_options(combo)
@@ -130,11 +144,12 @@ def select_combo_option(
             spec_step, ReviewReason.UI_ELEMENT_NOT_FOUND, f"{field_name}: {len(exact)} options named {option!r}"
         )
     target = exact[0]
-    shown = normalize_text(read_value(combo))
-    current = next((i for i, o in enumerate(options) if normalize_text(o) == shown), None)
-    if current is not None:
-        combo.set_focus()
-        keyboard.send_keys(("{DOWN}" if target > current else "{UP}") * abs(target - current), pause=0.03)
+    if not _search(combo, options, target):
+        shown = normalize_text(read_value(combo))
+        current = next((i for i, o in enumerate(options) if normalize_text(o) == shown), None)
+        if current is not None and current != target:
+            combo.set_focus()
+            keyboard.send_keys(("{DOWN}" if target > current else "{UP}") * abs(target - current), pause=0.03)
     if normalize_text(read_value(combo)) != normalize_text(option):
         _click_list_item(combo, options[target])
     observed = read_value(combo)
@@ -142,6 +157,41 @@ def select_combo_option(
         raise ManualReviewRequired(
             spec_step, ReviewReason.VALUE_MISMATCH, f"{field_name}: wanted {option!r}, shows {observed!r}"
         )
+
+
+def type_until_shown(send: Callable[[str], None], shown: Callable[[], str], text: str) -> bool:
+    """Windows combo search: each typed character extends a prefix search over the options. Type
+    `text` one character at a time; True as soon as the combo shows `text`, False if it never does."""
+    wanted = normalize_text(text)
+    for character in text:
+        send(escape_send_keys(character))
+        if normalize_text(shown()) == wanted:
+            return True
+    return False
+
+
+def arrow_nudge(target: int, count: int) -> str:
+    """One arrow away from the target and back, so the LAST selection change is an arrow key (which
+    Fakturama's binding always receives). On the last option the way away is Up."""
+    if count < 2:
+        return ""
+    return "{UP}{DOWN}" if target == count - 1 else "{DOWN}{UP}"
+
+
+def _search(combo: Any, options: Sequence[str], target: int) -> bool:
+    """Search the closed, focused combo by letters, then nudge. Skipped for an editable combo (an
+    `Edit` child), where typing only changes the text and selects nothing. False -> caller falls back."""
+    if find_first(combo, control_type="Edit") is not None or not focus(combo):
+        return False
+
+    def send(keys: str) -> None:
+        keyboard.send_keys(keys, with_spaces=True, pause=0.03)
+
+    if not type_until_shown(send, lambda: read_value(combo), options[target]):
+        return False
+    if nudge := arrow_nudge(target, len(options)):
+        keyboard.send_keys(nudge, pause=0.03)
+    return normalize_text(read_value(combo)) == normalize_text(options[target])
 
 
 def _click_list_item(combo: Any, name: str) -> None:

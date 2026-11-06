@@ -32,10 +32,18 @@ def check_amount(expected: Decimal, shown: str, spec_step: str, what: str) -> No
 
 
 def address_lines_missing(address_text: str, expected: Address) -> list[str]:
-    """Which parts of `expected` are not visible in an address block read from the UI."""
+    """Which parts of `expected` are not visible in an address block read from the UI.
+
+    Fakturama prints the country by name on a line of its own ('...\\r\\nDE-10117 Berlin\\r\\nGermany'),
+    so the country must equal a WHOLE line: a substring test would accept 'Niger' inside 'Nigeria'.
+    Found live: a wrong country (Georgia for Germany) was saved while street, ZIP and city matched."""
     haystack = normalize_ocr_text(address_text)
     parts = {"street": expected.street, "zip": expected.zip_code, "city": expected.city}
-    return [label for label, value in parts.items() if normalize_ocr_text(value) not in haystack]
+    missing = [label for label, value in parts.items() if normalize_ocr_text(value) not in haystack]
+    lines = {normalize_ocr_text(line) for line in address_text.splitlines()}
+    if expected.country and normalize_ocr_text(expected.country) not in lines:
+        missing.append("country")
+    return missing
 
 
 def check_address(address_text: str, expected: Address, spec_step: str, role: str) -> None:

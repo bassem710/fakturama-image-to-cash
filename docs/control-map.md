@@ -37,7 +37,7 @@ NatTable list read by its own Ctrl+A / Ctrl+C binding (OCR inside the UIA rectan
 | 1.7 | VAT mode | UIA | `ComboBox` `VAT`, stays `With VAT` |
 | 1.6 | **Cust.Ref.** | UIA | `Edit` `Cust.Ref.` |
 | 2.1 | Select existing contact | Order | 1st (upper) `Image` beside `Addresses`; the 2nd (green +) is never used |
-| 2.4, 2.13 | Invoice / Delivery address | UIA | `TabItem`s `Invoice address` / `Delivery address`; content = multi-line `Edit` |
+| 2.4, 2.13 | Invoice / Delivery address | UIA | `TabItem`s `Invoice address` / `Delivery address`; content = multi-line `Edit`: name, contact, street, `DE-10117 Berlin`, country name on its own line (checked: street, ZIP, city, country as a whole line) |
 | 3.2 | Select product | Order | 1st (upper) `Image` beside `Items` |
 | 3.13–3.16 | Items grid | Copy | NatTable right of `Items`; edited by keyboard (see Gotchas) |
 | 4.2 | Discount / Shipping | UIA | `Edit` `Discount`; `ComboBox` `Shipping` (`Free of shipping costs`) |
@@ -62,7 +62,7 @@ NatTable list read by its own Ctrl+A / Ctrl+C binding (OCR inside the UIA rectan
 |---|---|---|
 | 1 | `SelectionItem.Select()` on SWT tabs raises or returns without switching | `select_tab_item`: verify `IsSelected`, else click the tab element (`automation/input.py`) |
 | 2 | `ValuePattern.SetValue` changes an editor field's text but **not** Fakturama's data binding (a Debtor was saved without its company) | Editor fields are **typed** and read back (`set_and_verify`). SetValue is used only for the selection-dialog search box, which has no binding |
-| 3 | `SelectionItem.Select()` on a dropdown option changes the text but fires no SWT event: the old value is saved (a Product saved as VAT *Tax-free*) | Options chosen by keyboard Up/Down from the current option, else a click on the option element (`select_combo_option`) |
+| 3 | `SelectionItem.Select()` on a dropdown option changes the text but fires no SWT event: the old value is saved (a Product saved as VAT *Tax-free*) | Options are searched: type the option's letters on the focused combo until it shows the option, then one arrow away and back (gotcha 19). Fallbacks: Up/Down from the current option, then a click on the option element (`select_combo_option`) |
 | 4 | Multi-line Edits insert a tab character on Tab | No commit key when typing; read-back compares exactly |
 | 5 | Nebula CDateTime reverts a `SetValue`; Tab into it selects the first part; typed digits move on by themselves | Focus the previous field, Tab, confirm focus through UIA, type `MMDDYYYY`, leave, verify (`automation/date_input.py`) |
 | 6 | **Select a product** applies its row by itself as soon as its filter leaves exactly one (typing `CHR-ERG-01` applied an unrelated product at `CH`) | Search set in one event; a dialog that closes alone is `auto_applied` and the new Items line must carry the exact SKU (`selection_dialog.py`, stage 3) |
@@ -78,3 +78,5 @@ NatTable list read by its own Ctrl+A / Ctrl+C binding (OCR inside the UIA rectan
 | 16 | The New panel entry sometimes only re-focuses an open "new" editor | After 4 s without a new tab, the toolbar button (logged as a warning) |
 | 17 | OCR fallback: `%` read as `0/0`; O/0 and I/1 confused in codes | `fix_ocr_percent`; confusable-tolerant comparison on both sides |
 | 18 | "Save Parts" (closing dirty editors): checkbox state not readable | Editors are never closed by the run; each is saved once with the toolbar |
+| 19 | A dropdown selection made by **letters alone** (list open + Enter, or closed) shows the option, but the binding keeps an earlier prefix hit: Country showed *Germany*, the database saved `GE` (Georgia) | After the letter search, `{DOWN}{UP}` (`{UP}{DOWN}` on the last option) so the last change is an arrow key; verified in the database (`DE`, payment code `30`, VAT `S`). Addresses now also check the country line |
+| 20 | A field that validates per key (E-Mail) can show the last keystroke a moment late | `set_and_verify` polls the read-back for up to 1 s before retyping |

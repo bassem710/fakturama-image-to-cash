@@ -128,6 +128,15 @@ def test_ambiguous_debtor_stops_at_2_3(tmp_path: Path) -> None:
     assert outcome.message.startswith("[2.3] ambiguous_match")
 
 
+def test_known_debtor_saved_with_another_country_stops_at_2_4(tmp_path: Path) -> None:
+    ui = _booked(tmp_path)
+    for key in ("invoice_text", "delivery_text"):  # saved as Georgia, as the type-ahead bug did live
+        ui.db.debtors[0][key] = ui.db.debtors[0][key].replace("Germany", "Georgia")
+    outcome = run_once(tmp_path, ui, write_variant(tmp_path, external_reference="WEB-2026-0715-B02"), "second")
+    assert outcome.exit_code is ExitCode.MANUAL_REVIEW
+    assert outcome.message.startswith("[2.4] value_mismatch") and "country" in outcome.message
+
+
 def test_conflicting_debtor_stops_instead_of_creating_a_duplicate(tmp_path: Path) -> None:
     db = FakeDb(
         debtors=[

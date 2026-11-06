@@ -8,7 +8,7 @@ from datetime import date
 from decimal import Decimal
 
 from imagetocash.domain.matching import normalize_text
-from imagetocash.domain.models import Debtor, LineItem
+from imagetocash.domain.models import Address, Debtor, LineItem
 from imagetocash.domain.pricing import line_net_price, round_money, vat_amount
 
 
@@ -149,6 +149,11 @@ class FakeOrderEditor:
         self.db.calls.append("order.follow_up_invoice")
 
 
+def address_block(a: Address) -> str:
+    """The shape Fakturama shows (read live): name, street, 'DE-10117 Berlin', country on its own line."""
+    return f"{a.name}\r\n{a.street}\r\nDE-{a.zip_code} {a.city}\r\n{a.country}"
+
+
 class FakeDebtorEditor:
     def __init__(self, db: FakeDb) -> None:
         self.db = db
@@ -163,11 +168,10 @@ class FakeDebtorEditor:
 
     def fill_main_address(self, debtor: Debtor) -> None:
         a = debtor.billing_address
-        self.draft.update(zip=a.zip_code, city=a.city, invoice_text=f"{a.name}\n{a.street}\n{a.zip_code} {a.city}")
+        self.draft.update(zip=a.zip_code, city=a.city, invoice_text=address_block(a))
 
     def assign_address_roles(self, debtor: Debtor) -> None:
-        d = debtor.delivery_address
-        self.draft["delivery_text"] = f"{d.name}\n{d.street}\n{d.zip_code} {d.city}"
+        self.draft["delivery_text"] = address_block(debtor.delivery_address)
 
     def fill_miscellaneous(self, debtor: Debtor) -> None:
         self.draft["alias"] = debtor.alias
