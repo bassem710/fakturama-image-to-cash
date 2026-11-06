@@ -8,7 +8,7 @@ Rows read from lists are plain dicts keyed by record fields (company, first_name
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import date
 from decimal import Decimal
 from typing import Protocol
@@ -21,7 +21,7 @@ Row = Mapping[str, str]
 class SelectionDialogUi(Protocol):
     """'Select the address' / 'Select a product' dialogs opened from the Order (2.2-2.3, 3.3, 3.12)."""
 
-    def search(self, text: str) -> list[Row]: ...  # types the search, waits until the list is stable
+    def search(self, text: str) -> Sequence[Row]: ...  # types the search, waits until the list is stable
     def choose(self, row: Row) -> None: ...  # selects the row and clicks OK
     def cancel(self) -> None: ...
 
@@ -37,7 +37,7 @@ class OrderEditorUi(Protocol):
     def open_address_selector(self) -> SelectionDialogUi: ...  # 2.1 (upper icon, never the green +)
     def read_address_texts(self) -> dict[str, str]: ...  # 2.4 / 2.13 {"invoice": ..., "delivery": ...}
     def open_product_selector(self) -> SelectionDialogUi: ...  # 3.2
-    def read_item_lines(self) -> list[Row]: ...  # sku, quantity, unit_price, vat, discount, price
+    def read_item_lines(self) -> Sequence[Row]: ...  # sku, quantity, unit_price, vat, discount, price
     def fill_item_line(self, line_index: int, item: LineItem) -> None: ...  # 3.13-3.15
     def ensure_order_level_defaults(self) -> None: ...  # 4.2
     def read_totals(self) -> dict[str, str]: ...  # 4.3 {"net", "vat", "total"}
@@ -61,7 +61,7 @@ class MasterDataListUi(Protocol):
     """Data > terms of payment (2.10.1-2.10.2) and Data > VATs (3.4-3.5)."""
 
     def open(self) -> None: ...
-    def search(self, text: str) -> list[Row]: ...
+    def search(self, text: str) -> Sequence[Row]: ...
     def create_new(self) -> None: ...  # the green + at the upper right of the list
 
 
@@ -84,14 +84,14 @@ class ProductEditorUi(Protocol):
 
 class DocumentsListUi(Protocol):
     def open(self) -> None: ...
-    def rows_for_reference(self, customer_reference: str) -> list[Row]: ...  # 4.5 / 5.5
+    def rows_for_reference(self, customer_reference: str) -> Sequence[Row]: ...  # 4.5 / 5.5
 
 
 class InvoiceEditorUi(Protocol):
     def wait_until_open(self) -> None: ...  # 4.7
     def read_copied_values(self) -> dict[str, str]: ...  # 5.1 cust_ref, order_date, vat_mode, totals
     def read_address_texts(self) -> dict[str, str]: ...
-    def read_item_lines(self) -> list[Row]: ...
+    def read_item_lines(self) -> Sequence[Row]: ...
     def payment_methods_offered(self) -> list[str]: ...  # 5.2
     def select_payment_method(self, name: str) -> None: ...
     def mark_paid(self, payment_date: date, value: Decimal) -> None: ...  # 5.3
@@ -100,17 +100,27 @@ class InvoiceEditorUi(Protocol):
 
 
 class FakturamaUi(Protocol):
-    """Everything the run needs, grouped per screen."""
+    """Everything the run needs, grouped per screen (read-only members, so implementations may
+    expose more specific screen types)."""
 
-    order: OrderEditorUi
-    debtor: DebtorEditorUi
-    payment_methods: MasterDataListUi
-    payment_method_editor: PaymentMethodEditorUi
-    vats: MasterDataListUi
-    vat_editor: VatEditorUi
-    product_editor: ProductEditorUi
-    documents: DocumentsListUi
-    invoice: InvoiceEditorUi
+    @property
+    def order(self) -> OrderEditorUi: ...
+    @property
+    def debtor(self) -> DebtorEditorUi: ...
+    @property
+    def payment_methods(self) -> MasterDataListUi: ...
+    @property
+    def payment_method_editor(self) -> PaymentMethodEditorUi: ...
+    @property
+    def vats(self) -> MasterDataListUi: ...
+    @property
+    def vat_editor(self) -> VatEditorUi: ...
+    @property
+    def product_editor(self) -> ProductEditorUi: ...
+    @property
+    def documents(self) -> DocumentsListUi: ...
+    @property
+    def invoice(self) -> InvoiceEditorUi: ...
 
 
 def address_lines_missing(address_text: str, expected: Address) -> list[str]:

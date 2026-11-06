@@ -10,7 +10,7 @@ bounded by a rectangle that one of these locators returned.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -46,6 +46,7 @@ class ByProperties:
     name: str | None = None
     auto_id: str | None = None
     class_name: str | None = None
+    name_prefix: str | None = None
     index: int = 0
 
     @property
@@ -58,6 +59,7 @@ class ByProperties:
             e
             for e in scope.descendants(control_type=self.control_type)
             if _matches(e, None, self.name, self.auto_id, self.class_name)
+            and (self.name_prefix is None or str(e.element_info.name).startswith(self.name_prefix))
         ]
         return hits[self.index] if len(hits) > self.index else None
 
@@ -125,6 +127,38 @@ class LocatorChain:
             if element is not None:
                 return element
         return None
+
+
+def build_locator(spec: Mapping[str, Any] | Sequence[Mapping[str, Any]]) -> Locator:
+    """YAML spec -> locator. A list of specs becomes a LocatorChain (first hit wins)."""
+    if isinstance(spec, Sequence) and not isinstance(spec, str | Mapping):
+        return LocatorChain(tuple(build_locator(s) for s in spec))
+    assert isinstance(spec, Mapping)
+    kind = spec.get("by", "properties")
+    if kind == "properties":
+        return ByProperties(
+            control_type=spec.get("control_type"),
+            name=spec.get("name"),
+            auto_id=spec.get("auto_id"),
+            class_name=spec.get("class_name"),
+            name_prefix=spec.get("name_prefix"),
+            index=int(spec.get("index", 0)),
+        )
+    if kind == "label":
+        return ByLabel(label=spec["label"], target_type=spec.get("target", "Edit"))
+    if kind == "order":
+        return ByOrderInLabeledGroup(
+            label=spec["label"], target_type=spec.get("target", "Image"), position=int(spec.get("position", 0))
+        )
+    raise ValueError(f"unknown locator kind {kind!r} in {dict(spec)}")
+
+
+def largest_leaf_pane(scope: Any) -> Any | None:
+    """Custom-drawn widgets (NatTable) appear in UIA as a childless Pane: the biggest one in `scope`."""
+    leaves = [p for p in scope.descendants(control_type="Pane") if not p.children()]
+    if not leaves:
+        return None
+    return max(leaves, key=lambda p: p.rectangle().width() * p.rectangle().height())
 
 
 def locate(scope: Any, locator: Locator, timeout: float = 10.0) -> Any:

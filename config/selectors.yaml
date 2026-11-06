@@ -1,0 +1,121 @@
+# Control map for Fakturama 2.2.0 (en_US). Every UI element the automation touches is named here,
+# so a label or layout change is a config edit, not a code change.
+#
+# Locator forms (a list = try in order, first hit wins):
+#   {by: properties, control_type: Button, name: "Save the current contents", index: 0}
+#   {by: label, label: "Cust.Ref.", target: Edit}            # unnamed field after its label
+#   {by: order, label: "Addresses", target: Image, position: 0}  # Nth icon in the label's container
+#
+# status: verified = seen in a live UIA dump (docs/control-map.md); assumed = from the spec's wording,
+# confirm with `imagetocash inspect` before relying on it.
+
+main:                                   # verified
+  new_order: {by: properties, control_type: Button, name: "Create: New Order"}
+  save: {by: properties, control_type: Button, name: "Save the current contents"}
+  new_contact: {by: properties, control_type: Text, name: "New Contact"}
+  new_product: {by: properties, control_type: Text, name: "New product"}
+  data_menu: {by: properties, control_type: MenuItem, name: "Data"}
+
+data_views:                             # menu entry under Data -> navigation-view fallback
+  documents: "Documents"                # verified (navigation view)
+  vats: "VATs"                          # verified (navigation view)
+  payment_methods: "terms of payment"   # verified (navigation view)
+
+order_editor:                           # verified
+  tab_title: "New Order"
+  number: {by: label, label: "No.", target: Edit}
+  date: {by: label, label: "Date", target: Edit}
+  price_mode: {by: label, label: "Date", target: ComboBox}
+  customer_reference: {by: properties, control_type: Edit, name: "Cust.Ref."}
+  vat_mode: {by: properties, control_type: ComboBox, name: "VAT"}
+  select_address: {by: order, label: "Addresses", target: Image, position: 0}
+  select_product: {by: order, label: "Items", target: Image, position: 0}
+  discount: {by: properties, control_type: Edit, name: "Discount"}
+  shipping: {by: properties, control_type: ComboBox, name: "Shipping"}
+  total_net:
+    - {by: properties, control_type: Edit, name: "Total Net"}
+    - {by: properties, control_type: Edit, name: "Total Gross"}
+  vat_total: {by: properties, control_type: Edit, name: "VAT"}
+  total: {by: properties, control_type: Edit, name: "Total"}
+  follow_up_invoice: {by: properties, control_type: Button, name: "Invoice"}
+  address_tabs: {invoice: "Invoice address", delivery: "Delivery address"}
+  items_label: "Items"                  # the NatTable is the pane right of this label
+  items_columns:                        # assumed: OCR header text -> field
+    "Item No.": sku
+    "Qty.": quantity
+    "U.Price": unit_price
+    "VAT": vat
+    "Discount": discount
+    "Price": price
+
+selection_dialogs:                      # assumed
+  address_title: "Select the address"
+  product_title: "Select a product"
+  search: [{by: label, label: "Search:", target: Edit}, {by: properties, control_type: Edit}]
+  ok: [{by: properties, control_type: Button, name: "OK"}, {by: properties, class_name: Button, name: "OK"}]
+  cancel: [{by: properties, control_type: Button, name: "Cancel"}, {by: properties, class_name: Button, name: "Cancel"}]
+  address_columns: {"Company": company, "First Name": first_name, "Name": last_name, "ZIP": zip, "City": city}
+  product_columns: {"Item No.": sku, "Name": name, "Price": price}
+
+lists:                                  # search verified on Documents; the rest assumed
+  search: {by: label, label: "Search:", target: Edit}
+  create_new: {by: properties, control_type: Button, name_prefix: "Create"}
+  vat_columns: {"Name": name, "Description": description, "Value": value, "VAT code": code}
+  payment_columns: {"Name": name, "Description": description}
+  documents_columns: {"Type": type, "No.": number, "Date": date, "Customer": customer, "Cust.Ref.": reference, "State": state, "Total": total}
+
+debtor_editor:                          # assumed (spec 2.5-2.11 wording)
+  tab_title_prefix: "New"
+  company: {by: label, label: "Company", target: Edit}
+  first_name: {by: label, label: "First Name", target: Edit}
+  last_name: {by: label, label: "Last Name", target: Edit}
+  main_address_tab: "Main address"
+  street: {by: label, label: "Street", target: Edit}
+  zip: {by: label, label: "ZIP", target: Edit}
+  city: {by: label, label: "City", target: Edit}
+  country: {by: label, label: "Country", target: ComboBox}
+  email: {by: label, label: "E-Mail", target: Edit}
+  telephone: {by: label, label: "Telephone", target: Edit}
+  invoice_role: {by: properties, control_type: CheckBox, name: "Invoice address"}
+  delivery_role: {by: properties, control_type: CheckBox, name: "Delivery address"}
+  add_address: {by: properties, control_type: Button, name_prefix: "Add"}
+  miscellaneous_tab: "Miscellaneous"
+  alias: {by: label, label: "Alias name", target: Edit}
+  discount: {by: label, label: "Discount", target: Edit}
+  net_or_gross: {by: label, label: "Net or Gross", target: ComboBox}
+  payment_tab: "Payment"
+  payment_method: {by: label, label: "Payment Method", target: ComboBox}
+
+payment_method_editor:                  # assumed (spec 2.10.3-2.10.5)
+  name: {by: label, label: "Name", target: Edit}
+  description: {by: label, label: "Description", target: Edit}
+  payment_code: {by: label, label: "Payment code", target: ComboBox}
+  cash_discount: {by: label, label: "Cash discount", target: Edit}
+  discount_days: {by: label, label: "Discount Days", target: Edit}
+  net_days: {by: label, label: "Net Days", target: Edit}
+
+vat_editor:                             # assumed (spec 3.6)
+  name: {by: label, label: "Name", target: Edit}
+  description: {by: label, label: "Description", target: Edit}
+  code: {by: label, label: "VAT code (E-Invoice)", target: ComboBox}
+  value: {by: label, label: "Value", target: Edit}
+
+product_editor:                         # assumed (spec 3.8-3.10)
+  item_number: {by: label, label: "Item Number", target: Edit}
+  name: {by: label, label: "Name", target: Edit}
+  description: {by: label, label: "Description", target: Edit}
+  price_gross: {by: label, label: "Price (gross)", target: Edit}
+  cost_price: {by: label, label: "cost price (net)", target: Edit}
+  vat: {by: label, label: "VAT", target: ComboBox}
+  stock: {by: label, label: "Stock", target: Edit}
+
+invoice_editor:                         # assumed: mirrors the Order editor
+  tab_title_prefix: "IN"
+  number: {by: label, label: "No.", target: Edit}
+  customer_reference: {by: properties, control_type: Edit, name: "Cust.Ref."}
+  order_date: {by: label, label: "Order Date", target: Edit}
+  vat_mode: {by: properties, control_type: ComboBox, name: "VAT"}
+  payment_method: {by: label, label: "Payment", target: ComboBox}
+  paid: {by: properties, control_type: CheckBox, name: "paid"}
+  payment_date: {by: label, label: "paid", target: Edit}
+  paid_value: {by: label, label: "Value", target: Edit}

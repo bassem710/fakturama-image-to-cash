@@ -1,0 +1,17 @@
+fakturama_exe: "C:/Program Files/Fakturama2/Fakturama.exe"
+runs_dir: "runs"
+
+extraction:
+  model: "claude-opus-5-5"        # Claude Opus 5.5; override with --model
+  effort: "high"
+  refusal_fallbacks: true         # server-side fallback model if the request is declined
+  source_date_formats: ["%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y"]
+
+ui:
+  date_format: "%b {day}, %Y"     # Fakturama en_US shows "Nov 6, 2026"; {day} = day without zero padding
+  ocr_language: "en"
+  timeouts:                       # seconds
+    element: 10
+    dialog: 15
+    list_stable: 10
+    app_start: 120
