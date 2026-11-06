@@ -9,6 +9,8 @@ from typing import Any
 from imagetocash.automation.input import type_into
 from imagetocash.automation.locators import locate
 from imagetocash.automation.ocr_table import OcrTableRow
+from imagetocash.automation.screen_ocr import ScreenRect
+from imagetocash.automation.waiting import WaitTimeout
 from imagetocash.domain.review import ManualReviewRequired, ReviewReason
 from imagetocash.fakturama.screen_context import ScreenContext
 
@@ -30,9 +32,19 @@ class SelectionDialogScreen:
         match = next((ocr_row for record, ocr_row in self._rows if record == dict(row)), None)
         if match is None:
             raise ManualReviewRequired("-", ReviewReason.UI_ELEMENT_NOT_FOUND, f"row vanished from {self._title}")
-        self._ctx.click_point(match.click_point)  # point measured by OCR inside the list's UIA rectangle
-        self._ctx.press(locate(self._dialog, self._ctx.selectors.locator(S, "ok")))
-        self._ctx.session.wait_for_dialog_closed(self._title, self._ctx.settings.timeouts.dialog)
+        # Found live: clicking the row-number cell only highlights the row, and OK then applies
+        # nothing. A double-click on a DATA cell selects the record and closes the dialog. The point
+        # is measured by OCR inside the list's UIA rectangle (first mapped column, the row's y).
+        table = self._ctx.tables.read(ScreenRect.of(self._ctx.table_in(self._dialog)), tuple(self._columns))
+        x = next((x for title in self._columns if (x := table.column_center_x(title)) is not None), None)
+        if x is None:
+            raise ManualReviewRequired("-", ReviewReason.UI_ELEMENT_NOT_FOUND, f"no data column in {self._title}")
+        self._ctx.click_point((int(x), match.click_point[1]), double=True)
+        try:
+            self._ctx.session.wait_for_dialog_closed(self._title, timeout=3)
+        except WaitTimeout:
+            self._ctx.press(locate(self._dialog, self._ctx.selectors.locator(S, "ok")))
+            self._ctx.session.wait_for_dialog_closed(self._title, self._ctx.settings.timeouts.dialog)
 
     def cancel(self) -> None:
         self._ctx.press(locate(self._dialog, self._ctx.selectors.locator(S, "cancel")))
