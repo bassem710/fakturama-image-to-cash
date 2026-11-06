@@ -45,12 +45,13 @@ class GeminiVisionOrderExtractor:
 
     def extract(self, image_path: Path) -> ExtractedOrder:
         media_type = mimetypes.guess_type(image_path.name)[0] or "image/png"
+        contents: list[types.Part] = [
+            types.Part.from_bytes(data=image_path.read_bytes(), mime_type=media_type),
+            types.Part.from_text(text=EXTRACTION_INSTRUCTIONS),
+        ]
         response = self._client.models.generate_content(
             model=self._model,
-            contents=[
-                types.Part.from_bytes(data=image_path.read_bytes(), mime_type=media_type),
-                types.Part.from_text(text=EXTRACTION_INSTRUCTIONS),
-            ],
+            contents=contents,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
                 response_schema=ExtractedOrder,
