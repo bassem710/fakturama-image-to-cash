@@ -51,13 +51,3 @@ def parse_date(text: str, formats: Sequence[str] = DEFAULT_DATE_FORMATS) -> date
         except ValueError:
             continue
     raise ParseError(f"cannot read {text!r} as a date (tried {', '.join(formats)})")
-
-
-def split_contact_name(full_name: str) -> tuple[str, str]:
-    """'Marta Klein' -> ('Marta', 'Klein'); multi-part first names keep all but the last word."""
-    parts = full_name.split()
-    if not parts:
-        return "", ""
-    if len(parts) == 1:
-        return "", parts[0]
-    return " ".join(parts[:-1]), parts[-1]

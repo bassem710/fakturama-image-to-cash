@@ -1,4 +1,4 @@
-"""Load config/settings.yaml into typed settings."""
+"""Typed settings from config/settings.yaml (paths, model, UI formats, timeouts). Shared by every layer."""
 
 from __future__ import annotations
 

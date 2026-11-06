@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 
 from imagetocash.domain.matching import normalize_ocr_text, normalize_percent, normalize_text
-from imagetocash.domain.models import Address, LineItem, OrderDocument
+from imagetocash.domain.models import Address, Debtor, LineItem, OrderDocument
 from imagetocash.domain.pricing import amounts_match, line_net_price
 from imagetocash.domain.review import ManualReviewRequired, ReviewReason
 from imagetocash.extraction.parsing import ParseError, parse_amount
-from imagetocash.workflow.protocols import Row, address_lines_missing
+from imagetocash.workflow.protocols import Row
+
+WITH_VAT = "with vat"  # spec 1.7: the VAT setting stays 'With VAT'
 
 
 def ui_amount(text: str, spec_step: str, what: str) -> Decimal:
@@ -27,6 +29,13 @@ def check_amount(expected: Decimal, shown: str, spec_step: str, what: str) -> No
         raise ManualReviewRequired(
             spec_step, ReviewReason.VALUE_MISMATCH, f"{what}: expected {expected}, screen shows {shown!r}"
         )
+
+
+def address_lines_missing(address_text: str, expected: Address) -> list[str]:
+    """Which parts of `expected` are not visible in an address block read from the UI."""
+    haystack = normalize_ocr_text(address_text)
+    parts = {"street": expected.street, "zip": expected.zip_code, "city": expected.city}
+    return [label for label, value in parts.items() if normalize_ocr_text(value) not in haystack]
 
 
 def check_address(address_text: str, expected: Address, spec_step: str, role: str) -> None:
@@ -128,3 +137,48 @@ def _check_state(row: Row, expected: str, kind: str, spec_step: str) -> None:
     if state and state != expected:
         reason = ReviewReason.ALREADY_BOOKED_PARTIAL if kind == "Invoice" else ReviewReason.CONFLICTING_MATCH
         raise ManualReviewRequired(spec_step, reason, f"existing {kind} is {state!r}, expected {expected!r}")
+
+
+def check_order_addresses(shown: Mapping[str, str], debtor: Debtor, spec_step: str) -> None:
+    """2.4 / 2.13 / 4.1 / 5.1: the document's Invoice and Delivery address blocks match the image (a
+    document without a separate Delivery tab shows one block for both roles)."""
+    check_address(shown.get("invoice", ""), debtor.billing_address, spec_step, "Invoice")
+    check_address(shown.get("delivery", shown.get("invoice", "")), debtor.delivery_address, spec_step, "Delivery")
+
+
+def exactly_one_option(offered: Sequence[str], wanted: str, spec_step: str) -> str:
+    """2.10 / 5.2: the dropdown offers the extracted payment method exactly once; returns its text."""
+    matches = [o for o in offered if normalize_text(o) == normalize_text(wanted)]
+    if len(matches) != 1:
+        raise ManualReviewRequired(
+            spec_step, ReviewReason.PAYMENT_METHOD_UNAVAILABLE, f"{wanted!r} offered {len(matches)}x"
+        )
+    return matches[0]
+
+
+def single_row(rows: Sequence[Row], kind: str, number: str, spec_step: str) -> Row:
+    """4.5 / 5.5: exactly one Documents row of `kind` carrying the generated document `number`."""
+    matches = [
+        r
+        for r in rows
+        if normalize_ocr_text(r.get("number", "")) == normalize_ocr_text(number)
+        and (not r.get("type") or normalize_text(r.get("type", "")) == normalize_text(kind))
+    ]
+    if len(matches) != 1:
+        raise ManualReviewRequired(
+            spec_step, ReviewReason.VALUE_MISMATCH, f"{len(matches)} {kind} rows numbered {number!r} in Documents"
+        )
+    return matches[0]
+
+
+def check_order_row(row: Row, order: OrderDocument, order_number: str, spec_step: str) -> None:
+    """4.5 / 5.5: the saved Order's Documents row: number, date, Cust.Ref., state open, total."""
+    expected = {"number": order_number, "date": order.order_date.isoformat(), "reference": order.external_reference}
+    for field, value in expected.items():
+        if field in row and normalize_ocr_text(row[field]) != normalize_ocr_text(value):
+            raise ManualReviewRequired(
+                spec_step, ReviewReason.VALUE_MISMATCH, f"Order row {field}: {row[field]!r} != {value!r}"
+            )
+    if "state" in row and "open" not in normalize_text(row["state"]):
+        raise ManualReviewRequired(spec_step, ReviewReason.VALUE_MISMATCH, f"Order state is {row['state']!r}")
+    check_amount(order.totals.gross, row.get("total", "") or str(Decimal(0)), spec_step, "Order row Total")

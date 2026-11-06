@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from imagetocash.domain.matching import normalize_text
 from imagetocash.domain.review import ManualReviewRequired, ReviewReason
+from imagetocash.workflow.checks import WITH_VAT
 from imagetocash.workflow.context import RunContext
 from imagetocash.workflow.protocols import FakturamaUi
 
@@ -34,7 +35,7 @@ class OpenOrderStage:
             order_ui.set_price_mode_net()
             vat_mode = order_ui.read_vat_mode()
             rec.observed = vat_mode
-            if normalize_text(vat_mode) != "with vat":
+            if normalize_text(vat_mode) != WITH_VAT:
                 raise ManualReviewRequired("1.7", ReviewReason.VALUE_MISMATCH, f"VAT mode is {vat_mode!r}")
 
         with ev.spec_step("1.8", "Keep this New Order tab open for the rest of the flow"):

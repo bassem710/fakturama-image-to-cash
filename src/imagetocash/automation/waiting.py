@@ -1,4 +1,5 @@
-"""Explicit waits. No fixed sleeps anywhere else in the code base: everything polls a condition."""
+"""Explicit waits. No fixed sleeps anywhere else in the code base: everything polls a condition,
+except `settle`, the one documented pause for widgets that drop input right after a state change."""
 
 from __future__ import annotations
 
@@ -57,3 +58,10 @@ def wait_until_stable[T](
         if time.monotonic() >= deadline:
             raise WaitTimeout(f"{what} did not stabilize within {timeout:.1f}s")
         time.sleep(interval)
+
+
+def settle(seconds: float) -> None:
+    """A short, deliberate pause after a focus or state change, for widgets that drop keystrokes
+    sent too early (measured live; see docs/control-map.md, Gotchas). Never used to wait for an
+    outcome: outcomes are always polled with wait_until."""
+    time.sleep(seconds)

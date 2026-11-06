@@ -67,3 +67,14 @@ def test_redact_address_repr_with_empty_value_first() -> None:
     cleaned = redact(message)
     for secret in ("Northstar", "Friedrichstrasse", "10117", "Berlin", "Germany"):
         assert secret not in cleaned
+
+
+def test_step_expected_values_never_reach_the_evidence_files(tmp_path) -> None:
+    from imagetocash.automation.evidence import EvidenceRecorder
+
+    recorder = EvidenceRecorder(tmp_path)
+    with recorder.spec_step("2.2", "Search by company / customer name", expected="Northstar Office GmbH"):
+        pass
+    report = recorder.write_report("DONE")
+    for written in (tmp_path / "steps.jsonl", report):
+        assert "Northstar" not in written.read_text(encoding="utf-8")

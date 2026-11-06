@@ -113,12 +113,13 @@ class FakeOrderEditor:
     def read_item_lines(self) -> list[dict[str, str]]:
         return [dict(line) for line in self.lines]
 
-    def fill_item_line(self, line_index: int, item: LineItem) -> None:
+    def fill_item_line(self, line_index: int, item: LineItem) -> dict[str, str]:
         line = self.lines[line_index]
         line.update(
             quantity=str(item.quantity), unit_price=str(item.unit_net_price), discount=f"{item.discount_percent}%"
         )
         line["price"] = str(line_net_price(item.quantity, item.unit_net_price, item.discount_percent))
+        return dict(line)
 
     def ensure_order_level_defaults(self) -> None:
         self.fields.update(discount="0%", shipping="0.00")

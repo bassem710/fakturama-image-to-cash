@@ -4,15 +4,23 @@ Strategies, tried in order by LocatorChain (Chain of Responsibility; add a strat
 1. ByProperties          - UIA control type / name / automation id / class name
 2. ByLabel               - unnamed SWT field: find its label, take the next field of the wanted type
 3. ByOrderInLabeledGroup - unnamed icons: Nth element (top-to-bottom) inside the label's container
-OCR-based grounding for custom-drawn widgets lives in screen_ocr.py / tables.py and is always
+OCR-based grounding for custom-drawn widgets lives in screen_ocr.py / ocr_table.py and is always
 bounded by a rectangle that one of these locators returned.
+
+Speed (measured on Fakturama's SWT tree): a UIA FindAll walks the whole subtree (~0.4 s on the
+main window) whatever the condition, while FindFirst stops at the first match (~0.01 s). So
+named lookups use `find_first`, and `CachedScope` reads each element's properties at most once.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
+
+from pywinauto.controls.uiawrapper import UIAWrapper
+from pywinauto.uia_defines import IUIA
+from pywinauto.uia_element_info import UIAElementInfo
 
 from imagetocash.automation.waiting import WaitTimeout, wait_until
 
@@ -40,13 +48,29 @@ def _matches(
     )
 
 
+def find_first(scope: Any, *, control_type: str | None = None, name: str | None = None) -> Any | None:
+    """The first descendant of `scope` with this control type and/or exact name (native UIA FindFirst:
+    stops at the first match instead of walking the whole subtree). None when there is none."""
+    if isinstance(scope, CachedScope):
+        return ByProperties(control_type=control_type, name=name).find(scope)
+    iuia = IUIA()
+    try:
+        found = scope.element_info.element.FindFirst(
+            iuia.tree_scope["descendants"], iuia.build_condition(control_type=control_type, title=name)
+        )
+    except Exception:
+        return None
+    return UIAWrapper(UIAElementInfo(found)) if found else None
+
+
 class CachedScope:
-    """ScreenIndex: one walk of a scope's subtree, reused by every locator that searches it.
-    Behaves like the scope element for locators (descendants / children / element_info)."""
+    """ScreenIndex: one walk of a scope's subtree, reused by every locator that searches it, with each
+    element's name / type / class read at most once. Behaves like the scope element for locators
+    (descendants / children / element_info). Rebuilt by the owner after any UI change."""
 
     def __init__(self, scope: Any) -> None:
         self._scope = scope
-        self._all = list(scope.descendants())
+        self._all = [UIAWrapper(info) for info in scope.element_info.descendants(cache_enable=True)]
         self.element_info = scope.element_info
 
     def descendants(self, control_type: str | None = None) -> list[Any]:
@@ -76,6 +100,8 @@ class ByProperties:
         return f"ByProperties({', '.join(parts)})"
 
     def find(self, scope: Any) -> Any | None:
+        if self._plain_name_lookup() and not isinstance(scope, CachedScope):
+            return find_first(scope, control_type=self.control_type, name=self.name)
         hits = [
             e
             for e in scope.descendants(control_type=self.control_type)
@@ -83,6 +109,9 @@ class ByProperties:
             and (self.name_prefix is None or str(e.element_info.name).startswith(self.name_prefix))
         ]
         return hits[self.index] if len(hits) > self.index else None
+
+    def _plain_name_lookup(self) -> bool:
+        return self.name is not None and self.index == 0 and not (self.auto_id or self.class_name or self.name_prefix)
 
 
 @dataclass(frozen=True)
@@ -196,7 +225,3 @@ def locate(scope: Any, locator: Locator, timeout: float = 10.0) -> Any:
         return wait_until(lambda: locator.find(scope), timeout=timeout, what=locator.description)
     except WaitTimeout as error:
         raise UiElementNotFound(str(error)) from error
-
-
-def first_present(scope: Any, locators: Iterable[Locator]) -> Any | None:
-    return next((e for loc in locators if (e := loc.find(scope)) is not None), None)

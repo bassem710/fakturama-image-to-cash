@@ -15,7 +15,7 @@ from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-from imagetocash.automation.run_log import get_logger, redact
+from imagetocash.automation.run_log import get_logger, mask, redact
 from imagetocash.domain.review import ManualReviewRequired
 
 Screenshotter = Callable[[Path], None]
@@ -46,7 +46,9 @@ class EvidenceRecorder:
     @contextmanager
     def spec_step(self, spec_step: str, action: str, expected: str = "") -> Iterator[StepRecord]:
         log = get_logger()
-        record = StepRecord(spec_step=spec_step, action=redact(action), expected=redact(expected))
+        # `expected` is always a value from the order (a company, a reference, a date): masked whole,
+        # because redact() only finds values it can recognize (quoted, numbers, emails, phones).
+        record = StepRecord(spec_step=spec_step, action=redact(action), expected=mask(expected) if expected else "")
         started = time.monotonic()
         try:
             yield record

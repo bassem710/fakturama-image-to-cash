@@ -9,13 +9,29 @@ Rows read from lists are plain dicts keyed by record fields (company, first_name
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from contextlib import AbstractContextManager
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 from typing import Protocol
 
-from imagetocash.domain.models import Address, Debtor, LineItem
+from imagetocash.domain.models import Debtor, LineItem
 
 Row = Mapping[str, str]
+
+
+class StepRecord(Protocol):
+    observed: str  # what the step saw; logged masked
+
+
+class Evidence(Protocol):
+    """Per-step logging, screenshots and the run report (automation/evidence.py records them)."""
+
+    run_dir: Path
+
+    def spec_step(self, spec_step: str, action: str, expected: str = "") -> AbstractContextManager[StepRecord]: ...
+    def stage_done(self, stage: str) -> None: ...
+    def write_report(self, outcome: str) -> Path: ...
 
 
 class SelectionDialogUi(Protocol):
@@ -40,7 +56,7 @@ class OrderEditorUi(Protocol):
     def read_address_texts(self) -> dict[str, str]: ...  # 2.4 / 2.13 {"invoice": ..., "delivery": ...}
     def open_product_selector(self) -> SelectionDialogUi: ...  # 3.2
     def read_item_lines(self) -> Sequence[Row]: ...  # sku, quantity, unit_price, vat, discount, price
-    def fill_item_line(self, line_index: int, item: LineItem) -> None: ...  # 3.13-3.15
+    def fill_item_line(self, line_index: int, item: LineItem) -> Row: ...  # 3.13-3.15, the line read back
     def ensure_order_level_defaults(self) -> None: ...  # 4.2
     def read_totals(self) -> dict[str, str]: ...  # 4.3 {"net", "vat", "total"}
     def save(self) -> None: ...  # 4.4 toolbar Save, once
@@ -86,7 +102,7 @@ class ProductEditorUi(Protocol):
 
 class DocumentsListUi(Protocol):
     def open(self) -> None: ...
-    def rows_for_reference(self, customer_reference: str) -> Sequence[Row]: ...  # 4.5 / 5.5
+    def rows_for_reference(self, customer_reference: str) -> Sequence[Row]: ...  # 1.2.1 / 4.5 / 5.5
 
 
 class InvoiceEditorUi(Protocol):
@@ -123,12 +139,3 @@ class FakturamaUi(Protocol):
     def documents(self) -> DocumentsListUi: ...
     @property
     def invoice(self) -> InvoiceEditorUi: ...
-
-
-def address_lines_missing(address_text: str, expected: Address) -> list[str]:
-    """Which parts of `expected` are not visible in an address block read from the UI."""
-    from imagetocash.domain.matching import normalize_ocr_text
-
-    haystack = normalize_ocr_text(address_text)
-    parts = {"street": expected.street, "zip": expected.zip_code, "city": expected.city}
-    return [label for label, value in parts.items() if normalize_ocr_text(value) not in haystack]

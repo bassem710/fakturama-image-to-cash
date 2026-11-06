@@ -8,8 +8,8 @@ from typing import Annotated
 import typer
 
 from imagetocash.automation.run_log import redact
-from imagetocash.cli.config import load_settings
 from imagetocash.cli.container import build_extractor, build_runner
+from imagetocash.config import load_settings
 from imagetocash.domain.review import ManualReviewRequired
 from imagetocash.domain.validation import ensure_order_is_consistent
 from imagetocash.extraction.mapper import to_order_document
@@ -71,11 +71,11 @@ def inspect(
     config: ConfigOption = DEFAULT_CONFIG,
 ) -> None:
     """Dump Fakturama's UI Automation tree (main window + open dialogs) for control mapping."""
-    from imagetocash.automation.session import DesktopSession
     from imagetocash.automation.tree_dump import dump_tree
+    from imagetocash.fakturama.screen_context import SelectorMap, connect_session
 
     settings = load_settings(config)
-    session = DesktopSession.attach_or_launch(settings.fakturama_exe, timeout=settings.timeouts.app_start)
+    session = connect_session(settings, SelectorMap.load(settings.selectors_path))
     session.bring_to_front()
     parts = [dump_tree(session.main_wrapper(), depth)]
     parts += [f"=== DIALOG {d.element_info.name!r}\n{dump_tree(d, depth)}" for d in session.dialogs()]
@@ -103,9 +103,7 @@ def reset_workspace_command(
     if not yes:
         typer.echo(f"This quits Fakturama and moves {settings.workspace_dir / 'Database'} aside. Re-run with --yes.")
         raise typer.Exit(1)
-    moved_to = reset_workspace(
-        settings.fakturama_exe, settings.workspace_dir, settings.clean_backup, settings.backups_dir
-    )
+    moved_to = reset_workspace(settings, settings.workspace_dir, settings.clean_backup, settings.backups_dir)
     typer.echo(f"Old database moved to {moved_to}; clean database restored.")
 
 

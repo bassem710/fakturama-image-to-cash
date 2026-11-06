@@ -32,10 +32,6 @@ class OcrWord:
     bottom: float
 
     @property
-    def center(self) -> tuple[int, int]:
-        return int((self.left + self.right) / 2), int((self.top + self.bottom) / 2)
-
-    @property
     def middle_y(self) -> float:
         return (self.top + self.bottom) / 2
 

@@ -6,6 +6,15 @@
 #   {by: label, label: "Cust.Ref.", target: Edit, nth: 0, label_type: Text}   # unnamed field after its label
 #   {by: order, label: "Addresses", target: Image, position: 0}               # Nth icon in the label's container
 
+app:                                    # the main window and Fakturama's own error dialog
+  main_window_class: "SWT_Window0"
+  main_title_prefix: "Fakturama -"
+  internal_error_title: "Internal Error"
+  error_ok: "OK"
+  # Ctrl+C on an EMPTY NatTable raises "Internal Error ... copiedCells is null": harmless, acknowledged
+  # as an empty table. Any other Internal Error stops the run.
+  empty_copy_error_marker: "copiedCells"
+
 main:
   new_order: {by: properties, control_type: Button, name: "Create: New Order"}
   save: {by: properties, control_type: Button, name: "Save the current contents"}
@@ -40,11 +49,13 @@ order_editor:
   vat_total: {by: properties, control_type: Edit, name: "VAT"}
   total: {by: properties, control_type: Edit, name: "Total"}
   follow_up_invoice: {by: properties, control_type: Button, name: "Invoice"}
-  address_tabs: {invoice: "Invoice address", delivery: "Delivery address"}
+  address_tabs: {invoice: "Invoice address", delivery: "Delivery address"}   # first = left selected for Save
+  price_mode_net: "Net"
+  shipping_free_word: "free"                        # 4.2: the shipping combo shows "Free of shipping costs"
   # Copy order (seen live): the row-number column is NatTable's row header, not copied and not a
   # keyboard cell, so Ctrl+Home lands on Qty. VAT copies as the record's toString (taxValue: [0.19]).
   items_order: [quantity, sku, picture, name, description, vat, unit_price, discount, price]
-  items_columns:                        # OCR header text -> field (not yet seen with data)
+  items_columns:                        # header text -> field, for the OCR fallback
     "Item No.": sku
     "Qty.": quantity
     "U.Price": unit_price
@@ -99,6 +110,7 @@ debtor_editor:
   alias: {by: properties, control_type: Edit, name: "Alias name"}
   discount: {by: properties, control_type: Edit, name: "Discount"}
   net_or_gross: {by: properties, control_type: ComboBox, name: "Net or Gross"}
+  net_option: "Net"
   payment_method: {by: properties, control_type: ComboBox, name: "Payment"}
 
 payment_method_editor:                  # tab "New Term of Payment"
@@ -114,6 +126,7 @@ vat_editor:                             # tab "New TAX Rate"
   description: {by: properties, control_type: Edit, name: "Description"}
   code: {by: properties, control_type: ComboBox, name: "VAT code (E-Invoice)"}
   value: {by: properties, control_type: Edit, name: "Value"}
+  standard_code_option: "S (Standard rate)"
 
 product_editor:                         # tab "New product"
   item_number: {by: properties, control_type: Edit, name: "Item Number"}

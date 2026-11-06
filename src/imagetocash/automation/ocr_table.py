@@ -20,7 +20,7 @@ from imagetocash.domain.matching import normalize_text
 @dataclass(frozen=True)
 class OcrTableRow:
     cells: dict[str, str]
-    middle_y: float = 0.0  # screen y of the row's text (used only by automation/row_choice.py)
+    middle_y: float = 0.0  # screen y of the row's text (used only by fakturama/row_choice.py)
 
     def __hash__(self) -> int:
         return hash(tuple(sorted(self.cells.items())))

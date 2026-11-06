@@ -12,16 +12,15 @@ keyboard focus (never type blind), type the digits in display order, Tab out, ve
 from __future__ import annotations
 
 import re
-import time
 from collections.abc import Callable
 from datetime import date, datetime
 from typing import Any
 
 from pywinauto import keyboard
-from pywinauto.uia_defines import IUIA
 
+from imagetocash.automation.focus import has_keyboard_focus
 from imagetocash.automation.input import read_value
-from imagetocash.automation.waiting import WaitTimeout, wait_until
+from imagetocash.automation.waiting import WaitTimeout, settle, wait_until
 from imagetocash.domain.review import ManualReviewRequired, ReviewReason
 
 _MONTHS = ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
@@ -54,14 +53,6 @@ def typed_digits(target: date, display_format: str) -> str:
     return "".join(digits[part] for part in sorted(positions, key=positions.__getitem__))
 
 
-def has_keyboard_focus(element: Any) -> bool:
-    try:
-        focused = IUIA().iuia.GetFocusedElement()
-        return bool(IUIA().iuia.CompareElements(focused, element.element_info.element))
-    except Exception:
-        return False
-
-
 def set_cdatetime(
     element: Any,
     target: date,
@@ -87,7 +78,7 @@ def set_cdatetime(
             ) from error
         keyboard.send_keys(text, pause=KEY_PAUSE)
         commit()  # move focus away so the widget commits its value
-        time.sleep(0.1)
+        settle(0.1)  # the widget formats its text right after losing focus
         shown = read_value(element)
         if _parse(shown, parse_format) == target:
             return

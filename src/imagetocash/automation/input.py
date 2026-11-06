@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import contextlib
-import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any
 
 from pywinauto import keyboard
 
+from imagetocash.automation.focus import has_keyboard_focus
+from imagetocash.automation.waiting import WaitTimeout, wait_until
 from imagetocash.domain.matching import normalize_text
 from imagetocash.domain.review import ManualReviewRequired, ReviewReason
 
@@ -33,20 +34,13 @@ def type_into(element: Any, text: str, commit_key: str = "") -> None:
     listeners, so Fakturama recalculates exactly as for a human user. No commit key by default:
     several Fakturama fields are multi-line, where Tab inserts a tab character (seen in discovery)."""
     element.set_focus()
-    if not _has_focus(element):  # UIA focus did not take (seen live): click inside the field
+    if not has_keyboard_focus(element):  # UIA focus did not take (seen live): click inside the field
         element.click_input()
     keyboard.send_keys("^a{DELETE}", pause=0.02)
     if text:
         keyboard.send_keys(escape_send_keys(text), with_spaces=True, pause=0.005)
     if commit_key:
         keyboard.send_keys(commit_key, pause=0.02)
-
-
-def _has_focus(element: Any) -> bool:
-    try:
-        return bool(element.has_keyboard_focus())
-    except Exception:
-        return False
 
 
 def exact_text(value: str) -> str:
@@ -83,37 +77,41 @@ def set_and_verify(
 def combo_options(combo: Any) -> list[str]:
     """Visible option texts of a ComboBox (its list items exist while it is expanded)."""
     combo.expand()
-    try:
-        items: list[str] = []
-        deadline = time.monotonic() + 2.0  # the list items appear in the UIA tree a moment after Expand
-        while not items and time.monotonic() < deadline:
-            items = [str(item.element_info.name) for item in combo.descendants(control_type="ListItem")]
-            if not items:
-                time.sleep(0.05)
-        return items
+    try:  # the list items appear in the UIA tree a moment after Expand
+        return wait_until(
+            lambda: [str(item.element_info.name) for item in combo.descendants(control_type="ListItem")],
+            timeout=2.0,
+            what="dropdown options",
+            interval=0.05,
+        )
+    except WaitTimeout:
+        return []
     finally:
         combo.collapse()
+
+
+def is_selected(item: Any) -> bool:
+    """SelectionItem.IsSelected (a tab, a list item); False when the element has no such pattern."""
+    try:
+        return bool(item.iface_selection_item.CurrentIsSelected)
+    except Exception:
+        return False
 
 
 def select_tab_item(item: Any) -> None:
     """SWT tab folders: SelectionItem.Select() either raises ('Member not found') or returns without
     switching the editor, so verify IsSelected and fall back to clicking the tab's UIA rectangle."""
-
-    def is_selected() -> bool:
-        try:
-            return bool(item.iface_selection_item.CurrentIsSelected)
-        except Exception:
-            return False
-
-    if is_selected():
+    if is_selected(item):
         return
     with contextlib.suppress(Exception):
         item.iface_selection_item.Select()
-    if not is_selected():
+    if not is_selected(item):
         item.click_input()
 
 
-def select_combo_option(combo: Any, option: str, *, spec_step: str, field_name: str) -> None:
+def select_combo_option(
+    combo: Any, option: str, *, spec_step: str, field_name: str, options: Sequence[str] | None = None
+) -> None:
     """Select the ComboBox entry whose text equals `option` after normalization (Fakturama pads some
     options with spaces, e.g. 'Credit transfer '), then verify the selection.
 
@@ -121,10 +119,11 @@ def select_combo_option(combo: Any, option: str, *, spec_step: str, field_name: 
     SWT Selection event, so Fakturama's data binding keeps the old value: a Product was saved with
     VAT 'Tax-free' while its editor showed 'VAT 19%'. So the choice is made the way a user makes it:
     keyboard Up/Down from the current option (fires Selection), else a click on the option element
-    inside the expanded dropdown (element-relative, never a fixed point)."""
+    inside the expanded dropdown (element-relative, never a fixed point). `options` reuses a list the
+    caller has just read from this combo (saves a second expand)."""
     if normalize_text(read_value(combo)) == normalize_text(option):
         return
-    options = combo_options(combo)
+    options = list(options) if options is not None else combo_options(combo)
     exact = [i for i, o in enumerate(options) if normalize_text(o) == normalize_text(option)]
     if len(exact) != 1:
         raise ManualReviewRequired(
@@ -164,12 +163,10 @@ def set_checkbox(checkbox: Any, checked: bool, *, spec_step: str, field_name: st
         return bool(checkbox.iface_toggle.CurrentToggleState)
 
     def settled() -> bool:
-        deadline = time.monotonic() + 1.0
-        while time.monotonic() < deadline:
-            if state() == checked:
-                return True
-            time.sleep(0.05)
-        return state() == checked
+        try:
+            return wait_until(lambda: state() == checked, timeout=1.0, what=field_name, interval=0.05)
+        except WaitTimeout:
+            return False
 
     if state() == checked:
         return

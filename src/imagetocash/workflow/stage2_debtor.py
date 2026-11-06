@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from imagetocash.domain.matching import DEBTOR_MATCH_POLICY, PAYMENT_METHOD_MATCH_POLICY, normalize_text
+from imagetocash.domain.matching import DEBTOR_MATCH_POLICY, PAYMENT_METHOD_MATCH_POLICY
 from imagetocash.domain.payment_codes import payment_code_for
-from imagetocash.domain.review import ManualReviewRequired, ReviewReason
-from imagetocash.workflow.checks import check_address
+from imagetocash.workflow.checks import check_order_addresses, exactly_one_option
 from imagetocash.workflow.context import RunContext
 from imagetocash.workflow.protocols import FakturamaUi
 from imagetocash.workflow.resolver import decide, require_exact
@@ -39,7 +38,7 @@ class DebtorStage:
 
         if row is not None:
             with ev.spec_step("2.4", "Populated Invoice / Delivery address match the image"):
-                self._check_order_addresses(ctx, "2.4")
+                check_order_addresses(self._ui.order.read_address_texts(), debtor, "2.4")
             return
 
         self._create_debtor(ctx)
@@ -53,7 +52,7 @@ class DebtorStage:
             rec.observed = "new Debtor selected"
 
         with ev.spec_step("2.13", "Invoice / Delivery address populate correctly"):
-            self._check_order_addresses(ctx, "2.13")
+            check_order_addresses(self._ui.order.read_address_texts(), debtor, "2.13")
 
     def _create_debtor(self, ctx: RunContext) -> None:
         debtor, ev, debtor_ui = ctx.order.debtor, ctx.evidence, self._ui.debtor
@@ -75,12 +74,7 @@ class DebtorStage:
             debtor_ui.fill_miscellaneous(debtor)
         method = ctx.order.payment.method
         with ev.spec_step("2.10", "Payment: select the exact Payment Method", expected=method) as rec:
-            offered = [o for o in debtor_ui.payment_methods_offered() if normalize_text(o) == normalize_text(method)]
-            if len(offered) != 1:
-                raise ManualReviewRequired(
-                    "2.10", ReviewReason.PAYMENT_METHOD_UNAVAILABLE, f"{method!r} offered {len(offered)}x"
-                )
-            debtor_ui.select_payment_method(offered[0])
+            debtor_ui.select_payment_method(exactly_one_option(debtor_ui.payment_methods_offered(), method, "2.10"))
             rec.observed = "selected"
         with ev.spec_step("2.11", "Save the Debtor once"):
             debtor_ui.save()
@@ -113,9 +107,3 @@ class DebtorStage:
 
         with ev.spec_step("2.10.6", "Save the payment method once"):
             editor.save()  # waits until the editor is saved (no '*'); 2.10 then selects it
-
-    def _check_order_addresses(self, ctx: RunContext, spec_step: str) -> None:
-        debtor = ctx.order.debtor
-        shown = self._ui.order.read_address_texts()
-        check_address(shown.get("invoice", ""), debtor.billing_address, spec_step, "Invoice")
-        check_address(shown.get("delivery", shown.get("invoice", "")), debtor.delivery_address, spec_step, "Delivery")

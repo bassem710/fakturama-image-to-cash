@@ -2,29 +2,16 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from decimal import Decimal
-
-from imagetocash.domain.matching import normalize_ocr_text, normalize_text
 from imagetocash.domain.review import ManualReviewRequired, ReviewReason
-from imagetocash.workflow.checks import check_address, check_amount, check_item_line
+from imagetocash.workflow.checks import (
+    check_amount,
+    check_item_line,
+    check_order_addresses,
+    check_order_row,
+    single_row,
+)
 from imagetocash.workflow.context import RunContext
-from imagetocash.workflow.protocols import FakturamaUi, Row
-
-
-def single_row(rows: Sequence[Row], kind: str, number: str, spec_step: str) -> Row:
-    """Exactly one Documents row of `kind` carrying the generated document `number`."""
-    matches = [
-        r
-        for r in rows
-        if normalize_ocr_text(r.get("number", "")) == normalize_ocr_text(number)
-        and (not r.get("type") or normalize_text(r.get("type", "")) == normalize_text(kind))
-    ]
-    if len(matches) != 1:
-        raise ManualReviewRequired(
-            spec_step, ReviewReason.VALUE_MISMATCH, f"{len(matches)} {kind} rows numbered {number!r} in Documents"
-        )
-    return matches[0]
+from imagetocash.workflow.protocols import FakturamaUi
 
 
 class SaveOrderStage:
@@ -36,11 +23,7 @@ class SaveOrderStage:
 
         with ev.spec_step("4.1", "Debtor addresses and every line match the image"):
             order_ui.activate()
-            shown = order_ui.read_address_texts()
-            check_address(shown.get("invoice", ""), order.debtor.billing_address, "4.1", "Invoice")
-            check_address(
-                shown.get("delivery", shown.get("invoice", "")), order.debtor.delivery_address, "4.1", "Delivery"
-            )
+            check_order_addresses(order_ui.read_address_texts(), order.debtor, "4.1")
             lines = order_ui.read_item_lines()
             for row, item in zip(lines, order.items, strict=False):
                 check_item_line(row, item, "4.1")
@@ -67,27 +50,10 @@ class SaveOrderStage:
             rows = self._ui.documents.rows_for_reference(order.external_reference)
             row = single_row(rows, "order", ctx.order_number, "4.5")
             rec.observed = str(row)
-            check_order_row(row, ctx, "4.5")
+            check_order_row(row, order, ctx.order_number, "4.5")
 
         with ev.spec_step("4.6", "Create a follow-up document > Invoice (not the toolbar)"):
             order_ui.create_follow_up_invoice()
 
         with ev.spec_step("4.7", "Wait for the linked New Invoice editor"):
             self._ui.invoice.wait_until_open()
-
-
-def check_order_row(row: Row, ctx: RunContext, spec_step: str) -> None:
-    order = ctx.order
-    expected = {
-        "number": ctx.order_number,
-        "date": order.order_date.isoformat(),
-        "reference": order.external_reference,
-    }
-    for field, value in expected.items():
-        if field in row and normalize_ocr_text(row[field]) != normalize_ocr_text(value):
-            raise ManualReviewRequired(
-                spec_step, ReviewReason.VALUE_MISMATCH, f"Order row {field}: {row[field]!r} != {value!r}"
-            )
-    if "state" in row and "open" not in normalize_text(row["state"]):
-        raise ManualReviewRequired(spec_step, ReviewReason.VALUE_MISMATCH, f"Order state is {row['state']!r}")
-    check_amount(order.totals.gross, row.get("total", "") or str(Decimal(0)), spec_step, "Order row Total")

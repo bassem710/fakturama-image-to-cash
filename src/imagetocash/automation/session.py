@@ -26,10 +26,17 @@ class DesktopSession:
 
     app: Application
     main_handle: int
+    error_dialog_title: str = ""  # the app's own failure dialog: seeing it stops the run
 
     @classmethod
     def attach_or_launch(
-        cls, exe_path: Path, main_window_class: str = "SWT_Window0", timeout: float = 120.0
+        cls,
+        exe_path: Path,
+        *,
+        main_window_class: str,
+        main_title_prefix: str,
+        error_dialog_title: str = "",
+        timeout: float = 120.0,
     ) -> DesktopSession:
         app = Application(backend="uia")
         try:
@@ -40,18 +47,18 @@ class DesktopSession:
                 lambda: _try_connect(app, exe_path.name),
                 timeout=timeout,
                 what=f"{exe_path.name} to start",
-                interval=1.0,
+                interval=0.25,
             )
 
         def main_handle() -> int | None:
             for window in app.windows():
                 info = window.element_info
-                if info.class_name == main_window_class and info.name.startswith("Fakturama -"):
+                if info.class_name == main_window_class and info.name.startswith(main_title_prefix):
                     return int(window.handle)
             return None
 
-        handle = wait_until(main_handle, timeout=timeout, what="the main window", interval=1.0)
-        return cls(app=app, main_handle=handle)
+        handle = wait_until(main_handle, timeout=timeout, what="the main window", interval=0.25)
+        return cls(app=app, main_handle=handle, error_dialog_title=error_dialog_title)
 
     def main_window(self) -> Any:
         """WindowSpecification of the main window (supports child_window(...))."""
@@ -61,6 +68,9 @@ class DesktopSession:
         return self.main_window().wrapper_object()
 
     def bring_to_front(self) -> None:
+        """Maximized and in front. Cheap when it already is (two Win32 calls, no UIA)."""
+        if _user32.GetForegroundWindow() == self.main_handle and _user32.IsZoomed(self.main_handle):
+            return
         if _user32.IsIconic(self.main_handle):
             _user32.ShowWindow(self.main_handle, SW_MAXIMIZE)
         wrapper = self.main_wrapper()
@@ -81,9 +91,9 @@ class DesktopSession:
         return wait_until(probe, timeout=timeout, what=f"dialog '{title}'")
 
     def raise_if_app_error(self) -> None:
-        """Fakturama reports internal failures in an 'Internal Error' dialog: stop, never click on."""
-        if any(d.element_info.name == "Internal Error" for d in self.dialogs()):
-            raise AppInternalError("Fakturama showed an 'Internal Error' dialog")
+        """The app reports internal failures in its own error dialog: stop, never click on."""
+        if self.error_dialog_title and any(d.element_info.name == self.error_dialog_title for d in self.dialogs()):
+            raise AppInternalError(f"the app showed its {self.error_dialog_title!r} dialog")
 
     def wait_for_dialog_closed(self, title: str, timeout: float) -> None:
         self.raise_if_app_error()

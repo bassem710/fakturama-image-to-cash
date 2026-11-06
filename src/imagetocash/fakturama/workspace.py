@@ -15,21 +15,22 @@ import zipfile
 from datetime import datetime
 from pathlib import Path
 
-from imagetocash.automation.session import DesktopSession
 from imagetocash.automation.waiting import WaitTimeout, wait_until
+from imagetocash.config import Settings
+from imagetocash.fakturama.screen_context import SelectorMap, connect_session
 
 # Prompts Fakturama shows on exit. 'Save Parts' saves open drafts into the database that is about to
 # be set aside, which keeps that backup consistent.
 _EXIT_ANSWERS = (("Error", "OK"), ("Internal Error", "OK"), ("Quit Fakturama", "Yes"), ("Save Parts", "OK"))
 
 
-def reset_workspace(exe: Path, workspace: Path, clean_backup: Path, backups_dir: Path) -> Path:
+def reset_workspace(settings: Settings, workspace: Path, clean_backup: Path, backups_dir: Path) -> Path:
     """Quit Fakturama, move `workspace/Database` aside, restore `clean_backup`. Returns the folder
     the old database was moved to."""
     if not clean_backup.is_file():
         raise FileNotFoundError(f"clean backup not found: {clean_backup}")
-    if _running(exe):
-        _quit(exe)
+    if _running(settings.fakturama_exe):
+        _quit(settings)
     target = backups_dir / datetime.now().strftime("%Y%m%d-%H%M%S")
     target.mkdir(parents=True)
     database = workspace / "Database"
@@ -47,8 +48,9 @@ def _running(exe: Path) -> bool:
     return exe.name.casefold() in listing.casefold()
 
 
-def _quit(exe: Path) -> None:
-    session = DesktopSession.attach_or_launch(exe)
+def _quit(settings: Settings) -> None:
+    exe = settings.fakturama_exe
+    session = connect_session(settings, SelectorMap.load(settings.selectors_path))
     session.main_wrapper().close()
 
     def gone() -> bool:

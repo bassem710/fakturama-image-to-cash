@@ -28,6 +28,8 @@ class ExtractedItem(BaseModel):
 class ExtractedOrder(BaseModel):
     external_reference: str = Field(description="External / customer order reference")
     order_date: str = Field(description="Order date exactly as printed")
+    # Not read by the code: asking the model to state the date format makes it decide the day/month
+    # order explicitly before it copies order_date and payment_date.
     date_format_note: str | None = Field(
         None, description="Date format stated on the document (e.g. 'YYYY-MM-DD'), if any"
     )

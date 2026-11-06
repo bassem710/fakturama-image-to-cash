@@ -4,20 +4,19 @@ Exit codes: 0 done or already processed, 2 manual review, 1 error."""
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from enum import IntEnum
 from pathlib import Path
 from typing import Protocol
 
-from imagetocash.automation.evidence import EvidenceRecorder
 from imagetocash.domain.models import OrderDocument
 from imagetocash.domain.review import ManualReviewRequired, ReviewReason
 from imagetocash.domain.validation import ensure_order_is_consistent
 from imagetocash.extraction.extractors import OrderExtractor
-from imagetocash.extraction.mapper import to_order_document
+from imagetocash.extraction.mapper import DEFAULT_DATE_FORMATS, to_order_document
 from imagetocash.workflow.context import RunContext
-from imagetocash.workflow.protocols import FakturamaUi
+from imagetocash.workflow.protocols import Evidence, FakturamaUi
 from imagetocash.workflow.stage0_guard import AlreadyBookedGuard
 from imagetocash.workflow.stage1_open_order import OpenOrderStage
 from imagetocash.workflow.stage2_debtor import DebtorStage
@@ -65,10 +64,12 @@ class ImageToCashRunner:
         self,
         extractor: OrderExtractor,
         connect_ui: Callable[[], FakturamaUi],
-        evidence: EvidenceRecorder,
+        evidence: Evidence,
         start_app_early: Callable[[], None] = lambda: None,
+        source_date_formats: Sequence[str] = DEFAULT_DATE_FORMATS,
     ) -> None:
         self._extractor = extractor
+        self._date_formats = tuple(source_date_formats)
         self._connect_ui = connect_ui
         self._evidence = evidence
         self._start_app_early = start_app_early
@@ -112,7 +113,7 @@ class ImageToCashRunner:
         with ev.spec_step("1.1", "Extract and normalize the order image", expected=image_path.name) as rec:
             extracted = self._extractor.extract(image_path)
             (ev.run_dir / "extracted.json").write_text(extracted.model_dump_json(indent=2), encoding="utf-8")
-            order = to_order_document(extracted)
+            order = to_order_document(extracted, self._date_formats)
             ensure_order_is_consistent(order)
             rec.observed = f"{len(order.items)} item(s), total {order.totals.gross} {order.currency}"
         with ev.spec_step("1.2", "All required fields extracted") as rec:

@@ -47,8 +47,7 @@ class ProductsStage:
         wanted = {"sku": item.sku}
 
         with ev.spec_step("3.2", f"[{item.sku}] Open Select a product (upper icon beside Items)"):
-            order_ui.activate()
-            dialog = order_ui.open_product_selector()
+            dialog = order_ui.open_product_selector()  # activates this run's Order first
 
         with ev.spec_step("3.3", f"[{item.sku}] Search the exact SKU") as rec:
             rows = dialog.search(item.sku)
@@ -70,23 +69,7 @@ class ProductsStage:
 
     def _create_product(self, ctx: RunContext, line_index: int, item: LineItem) -> Row:
         ev, ui = ctx.evidence, self._ui
-        vat_name = vat_name_for(item.vat_percent)
-        wanted_vat = {"name": vat_name, "value": str(item.vat_percent), "code": STANDARD_RATE_CODE}
-
-        with ev.spec_step("3.4", f"[{item.sku}] Data > VATs: search {vat_name}") as rec:
-            ui.vats.open()
-            rows = ui.vats.search(vat_name)
-            rec.observed = f"{len(rows)} row(s)"
-
-        with ev.spec_step("3.5", f"[{item.sku}] Reuse only Name/Value/code S exact") as rec:
-            existing_vat = decide(self._vat_policy, wanted_vat, rows, "3.5")
-            rec.observed = "reuse existing VAT" if existing_vat else "missing -> create (3.6)"
-
-        if existing_vat is None:
-            with ev.spec_step("3.6", f"[{item.sku}] Create {vat_name} (code S, value {item.vat_percent}), save once"):
-                ui.vats.create_new()
-                ui.vat_editor.fill(vat_name, item.vat_percent)
-                ui.vat_editor.save()  # waits until saved; 3.7 then proves it via the Product's VAT dropdown
+        vat_name = self._ensure_vat(ctx, item)
 
         with ev.spec_step("3.7", f"[{item.sku}] New product (VAT now in the dropdown)") as rec:
             ui.product_editor.open_new_product()
@@ -107,7 +90,6 @@ class ProductsStage:
             ui.product_editor.save()
 
         with ev.spec_step("3.12", f"[{item.sku}] Back on the Order: select the new Product") as rec:
-            ui.order.activate()
             dialog = ui.order.open_product_selector()
             rows = dialog.search(item.sku)
             if dialog.auto_applied:
@@ -117,6 +99,28 @@ class ProductsStage:
                 dialog.choose(row)
             rec.observed = "new Product selected"
         return row
+
+    def _ensure_vat(self, ctx: RunContext, item: LineItem) -> str:
+        """3.4-3.6: reuse the exact VAT rate, else create it (code S) and save it once. Returns its name."""
+        ev, ui = ctx.evidence, self._ui
+        vat_name = vat_name_for(item.vat_percent)
+        wanted_vat = {"name": vat_name, "value": str(item.vat_percent), "code": STANDARD_RATE_CODE}
+
+        with ev.spec_step("3.4", f"[{item.sku}] Data > VATs: search {vat_name}") as rec:
+            ui.vats.open()
+            rows = ui.vats.search(vat_name)
+            rec.observed = f"{len(rows)} row(s)"
+
+        with ev.spec_step("3.5", f"[{item.sku}] Reuse only Name/Value/code S exact") as rec:
+            existing_vat = decide(self._vat_policy, wanted_vat, rows, "3.5")
+            rec.observed = "reuse existing VAT" if existing_vat else "missing -> create (3.6)"
+
+        if existing_vat is None:
+            with ev.spec_step("3.6", f"[{item.sku}] Create {vat_name} (code S, value {item.vat_percent}), save once"):
+                ui.vats.create_new()
+                ui.vat_editor.fill(vat_name, item.vat_percent)
+                ui.vat_editor.save()  # waits until saved; 3.7 then proves it via the Product's VAT dropdown
+        return vat_name
 
     def _auto_applied_line(self, line_index: int, item: LineItem, spec_step: str) -> Row:
         """'Select a product' applies its only filter hit by itself. That hit may merely CONTAIN the
@@ -138,11 +142,8 @@ class ProductsStage:
             ),
             ev.spec_step("3.15", f"[{item.sku}] Discount", expected=f"{item.discount_percent}%"),
         ):
-            order_ui.fill_item_line(line_index, item)
+            line = order_ui.fill_item_line(line_index, item)  # the line as read back after the edit
 
         with ev.spec_step("3.16", f"[{item.sku}] Line Price = qty x net x (1 - disc)") as rec:
-            lines = order_ui.read_item_lines()
-            if line_index >= len(lines):
-                raise ManualReviewRequired("3.16", ReviewReason.VALUE_MISMATCH, f"line {line_index + 1} not on screen")
-            check_item_line(lines[line_index], item, "3.16")
-            rec.observed = lines[line_index].get("price", "")
+            check_item_line(line, item, "3.16")
+            rec.observed = line.get("price", "")

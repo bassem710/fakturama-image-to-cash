@@ -3,18 +3,20 @@
 from __future__ import annotations
 
 import subprocess
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
 from imagetocash.automation.evidence import EvidenceRecorder
 from imagetocash.automation.run_log import setup_run_logging
-from imagetocash.cli.config import Settings
+from imagetocash.config import Settings
 from imagetocash.extraction.extractors import (
     GeminiVisionOrderExtractor,
     OrderExtractor,
     SavedJsonOrderExtractor,
     gemini_client,
 )
+from imagetocash.fakturama.screen_context import SelectorMap
 from imagetocash.workflow.protocols import FakturamaUi
 from imagetocash.workflow.runner import ImageToCashRunner
 
@@ -38,29 +40,34 @@ def new_run_dir(settings: Settings) -> Path:
     return settings.runs_dir / datetime.now().strftime("%Y%m%d-%H%M%S")
 
 
-def screenshot_main_window(path: Path) -> None:
-    """Screen capture as compressed PNG (local runs/ only; contains order data, git-ignored)."""
-    import win32gui
-    from PIL import ImageGrab
+def main_window_screenshotter(title_prefix: str) -> Callable[[Path], None]:
+    """Captures only the app's main window (title starting with `title_prefix`) as compressed PNG, into
+    the local, git-ignored runs/ folder (screenshots contain order data)."""
 
-    handles: list[int] = []
+    def capture(path: Path) -> None:
+        import win32gui
+        from PIL import ImageGrab
 
-    def collect(hwnd: int, _: object) -> bool:
-        if win32gui.IsWindowVisible(hwnd) and win32gui.GetWindowText(hwnd).startswith("Fakturama -"):
-            handles.append(hwnd)
-        return True
+        handles: list[int] = []
 
-    win32gui.EnumWindows(collect, None)
-    if not handles:
-        return
-    left, top, right, bottom = win32gui.GetWindowRect(handles[0])
-    ImageGrab.grab(bbox=(left, top, right, bottom), all_screens=True).save(path, compress_level=1)
+        def collect(hwnd: int, _: object) -> bool:
+            if win32gui.IsWindowVisible(hwnd) and win32gui.GetWindowText(hwnd).startswith(title_prefix):
+                handles.append(hwnd)
+            return True
+
+        win32gui.EnumWindows(collect, None)
+        if handles:
+            left, top, right, bottom = win32gui.GetWindowRect(handles[0])
+            ImageGrab.grab(bbox=(left, top, right, bottom), all_screens=True).save(path, compress_level=1)
+
+    return capture
 
 
 def build_runner(settings: Settings, from_json: Path | None, model: str | None) -> tuple[ImageToCashRunner, Path]:
     run_dir = new_run_dir(settings)
     setup_run_logging(run_dir)
-    evidence = EvidenceRecorder(run_dir, screenshotter=screenshot_main_window)
+    title_prefix = str(SelectorMap.load(settings.selectors_path).value("app", "main_title_prefix"))
+    evidence = EvidenceRecorder(run_dir, screenshotter=main_window_screenshotter(title_prefix))
 
     def connect_ui() -> FakturamaUi:
         from imagetocash.fakturama.app import FakturamaApp
@@ -72,7 +79,13 @@ def build_runner(settings: Settings, from_json: Path | None, model: str | None) 
         if not _fakturama_running(settings.fakturama_exe):
             subprocess.Popen([str(settings.fakturama_exe)], cwd=str(settings.fakturama_exe.parent))
 
-    runner = ImageToCashRunner(build_extractor(settings, from_json, model), connect_ui, evidence, start_app_early)
+    runner = ImageToCashRunner(
+        build_extractor(settings, from_json, model),
+        connect_ui,
+        evidence,
+        start_app_early,
+        source_date_formats=settings.source_date_formats,
+    )
     return runner, run_dir
 
 

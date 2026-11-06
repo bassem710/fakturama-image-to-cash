@@ -9,13 +9,13 @@ The user's clipboard text is restored afterwards.
 from __future__ import annotations
 
 import contextlib
-import time
 from typing import Any
 
 import win32clipboard
 from pywinauto import keyboard
 
-from imagetocash.automation.date_input import has_keyboard_focus
+from imagetocash.automation.focus import focus
+from imagetocash.automation.waiting import WaitTimeout, wait_until
 
 _SENTINEL = "\x00imagetocash-empty\x00"
 
@@ -55,23 +55,17 @@ def copy_table(table: Any, timeout: float = 1.5) -> list[list[str]] | None:
         previous = _get_text()
     try:
         _set_text(_SENTINEL)
-        table.set_focus()
-        # Found live (run #20): keys sent right after the focus change can be dropped; a lost Ctrl+A
-        # copies only the selected row. So wait for real keyboard focus and let it settle first.
-        focus_deadline = time.monotonic() + 2.0
-        while not has_keyboard_focus(table) and time.monotonic() < focus_deadline:
-            time.sleep(0.05)
-        time.sleep(0.15)
-        keyboard.send_keys("^a^c", pause=0.05)
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            text = None
-            with contextlib.suppress(Exception):  # the clipboard may be busy for a moment
-                text = _get_text()
-            if text is not None and text != _SENTINEL:
-                return parse_rows(text)
-            time.sleep(0.05)
-        return None
+        focus(table)  # a lost Ctrl+A copies only the selected row: confirm focus first
+        keyboard.send_keys("^a^c", pause=0.03)
+
+        def copied() -> str | None:
+            text = _get_text()  # may raise while the clipboard is busy: wait_until retries
+            return text if text is not None and text != _SENTINEL else None
+
+        try:
+            return parse_rows(wait_until(copied, timeout=timeout, what="the table copy", interval=0.05))
+        except WaitTimeout:
+            return None
     finally:
         with contextlib.suppress(Exception):
             if previous is not None:

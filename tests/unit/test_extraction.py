@@ -8,7 +8,7 @@ from tests.conftest import make_northstar_order
 from imagetocash.domain.review import ManualReviewRequired
 from imagetocash.extraction.extractors import SavedJsonOrderExtractor
 from imagetocash.extraction.mapper import to_order_document
-from imagetocash.extraction.parsing import ParseError, parse_amount, parse_date, split_contact_name
+from imagetocash.extraction.parsing import ParseError, parse_amount, parse_date
 
 FIXTURE = Path(__file__).parent.parent / "fixtures" / "northstar_extracted.json"
 
@@ -40,11 +40,6 @@ def test_parse_date_formats() -> None:
     assert parse_date("14.07.2026") == date(2026, 7, 14)
     with pytest.raises(ParseError):
         parse_date("July 14th")
-
-
-def test_split_contact_name() -> None:
-    assert split_contact_name("Marta Klein") == ("Marta", "Klein")
-    assert split_contact_name("Anna Maria Meyer") == ("Anna Maria", "Meyer")
 
 
 def test_saved_extraction_maps_to_the_expected_order() -> None:
