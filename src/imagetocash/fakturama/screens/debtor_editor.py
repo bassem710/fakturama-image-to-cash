@@ -14,10 +14,9 @@ from imagetocash.automation.input import (
     select_combo_option,
     select_tab_item,
     set_and_verify,
-    set_checkbox,
 )
 from imagetocash.automation.locators import ByProperties, locate
-from imagetocash.automation.waiting import wait_until
+from imagetocash.automation.waiting import WaitTimeout, wait_until
 from imagetocash.domain.matching import normalize_text
 from imagetocash.domain.models import Address, Debtor
 from imagetocash.domain.review import ManualReviewRequired, ReviewReason
@@ -131,21 +130,39 @@ class DebtorEditorScreen:
         select_combo_option(self._field("country", tab), address.country, spec_step=spec_step, field_name="Country")
 
     def _set_roles(self, tab: Any, *, invoice: bool, delivery: bool) -> None:
-        """The button after 'address type' opens a popup (a child pane of the main window) with the
-        role checkboxes."""
+        """Roles live in a popup opened by the button after 'address type'. Found live: the popup
+        checkboxes' Toggle state reads stale over UIA, but the 'address type' text field next to the
+        button always shows the assigned roles, so that field is the read-back."""
         label = str(self._ctx.selectors.value(S, "address_type_label"))
         siblings = list(locate(tab, ByProperties(control_type="Text", name=label)).parent().children())
         index = next(i for i, e in enumerate(siblings) if e.element_info.name == label)
+        role_text = next(iter(siblings[index + 1].descendants(control_type="Edit")), None)
         button = next(iter(siblings[index + 1].descendants(control_type="Button")), None)
-        if button is None:
-            raise ManualReviewRequired("2.8", ReviewReason.UI_ELEMENT_NOT_FOUND, "address type button not found")
-        button.click_input()
-        main = self._ctx.main()
-        set_checkbox(self._ctx.find(S, "invoice_role", scope=main), invoice, spec_step="2.8", field_name="Invoice role")
-        set_checkbox(
-            self._ctx.find(S, "delivery_role", scope=main), delivery, spec_step="2.8", field_name="Delivery role"
-        )
-        keyboard.send_keys("{ESC}")  # close the role popup
+        if role_text is None or button is None:
+            raise ManualReviewRequired("2.8", ReviewReason.UI_ELEMENT_NOT_FOUND, "address type field not found")
+
+        wanted = {"invoice_role": invoice, "delivery_role": delivery}
+
+        def role_shown(key: str) -> bool:
+            role_name = str(self._ctx.selectors.value(S, key)["name"])
+            return normalize_text(role_name) in normalize_text(read_value(role_text))
+
+        to_flip = [key for key, on in wanted.items() if role_shown(key) != on]
+        if to_flip:
+            button.click_input()
+            for key in to_flip:
+                self._ctx.find(S, key, scope=self._ctx.main()).click_input()  # real click on the checkbox
+            keyboard.send_keys("{ESC}")  # close the role popup
+        try:
+            wait_until(
+                lambda: all(role_shown(key) == on for key, on in wanted.items()),
+                timeout=self._ctx.settings.timeouts.element,
+                what="address roles",
+            )
+        except WaitTimeout as error:
+            raise ManualReviewRequired(
+                "2.8", ReviewReason.VALUE_MISMATCH, f"address type shows {read_value(role_text)!r}, wanted {wanted}"
+            ) from error
 
 
 def _digits(text: str) -> str:
