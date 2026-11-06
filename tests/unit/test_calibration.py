@@ -59,3 +59,10 @@ def test_grid_lines_define_columns_for_centred_headers() -> None:
     ]
     table = build_table(words, ("Company",), separators)
     assert table.rows[0].cells == {"First Name": "Marta", "Company": "Northstar Offi...", "ZIP": "10117"}
+
+
+def test_typed_date_digits_follow_the_display_format() -> None:
+    from imagetocash.automation.date_input import typed_digits
+
+    assert typed_digits(date(2026, 7, 14), "%b %d, %Y") == "07142026"  # en_US: Jul 14, 2026
+    assert typed_digits(date(2026, 7, 14), "%d.%m.%Y") == "14072026"  # de_DE: 14.07.2026

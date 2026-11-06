@@ -1,9 +1,10 @@
-"""Setting a Nebula CDateTime field (Fakturama's date widgets).
+"""Entering a date into a Nebula CDateTime field (Fakturama's date widgets).
 
-Discovery showed the widget ignores UIA SetValue (it reverts on focus loss) and edits ONE field at a
-time: Right moves to the next field (wrapping), Up/Down step the selected field, digits overwrite it.
-Which field is selected after focusing is not fixed, so we probe it: press Up, see which part of the
-date moved, press Down to undo. Then every part is reached with Right and set deterministically.
+Found live: the widget ignores UIA SetValue (it reverts on focus loss), but it accepts typed digits
+part by part and moves to the next part by itself once one is complete (2 digits for month/day,
+4 for the year). So the date is ENTERED: put the caret at the start of the field (a click at the
+left edge of the field's own UIA rectangle selects its first part), type all digits in the
+display order, and move focus away to commit.
 """
 
 from __future__ import annotations
@@ -19,12 +20,9 @@ from pywinauto import keyboard
 from imagetocash.automation.input import read_value
 from imagetocash.domain.review import ManualReviewRequired, ReviewReason
 
-FIELD_ORDER = ("month", "day", "year")  # en_US "MMM d, yyyy": Right cycles month -> day -> year -> month
-KEY_PAUSE = 0.05
-
-
 _MONTHS = ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
 _LENIENT = re.compile(r"([A-Za-z]{3})\w*\s+(\d{1,2}),\s*(\d{1,4})")
+_PART_CODES = {"month": ("%b", "%B", "%m"), "day": ("%d", "%e"), "year": ("%Y", "%y")}
 
 
 def _parse(text: str, fmt: str) -> date | None:
@@ -41,12 +39,14 @@ def _parse(text: str, fmt: str) -> date | None:
     return None
 
 
-def _changed_part(before: date, after: date) -> str:
-    if before.year != after.year:
-        return "year"
-    if before.month != after.month:
-        return "month"
-    return "day"
+def typed_digits(target: date, display_format: str) -> str:
+    """Digits in the order the field shows its parts: '%b %d, %Y' + 2026-07-14 -> '07142026'."""
+    positions = {
+        part: min((display_format.find(code) for code in codes if code in display_format), default=99)
+        for part, codes in _PART_CODES.items()
+    }
+    digits = {"month": f"{target.month:02d}", "day": f"{target.day:02d}", "year": f"{target.year:04d}"}
+    return "".join(digits[part] for part in sorted(positions, key=positions.__getitem__))
 
 
 def set_cdatetime(
@@ -58,43 +58,19 @@ def set_cdatetime(
     spec_step: str,
     field_name: str,
 ) -> None:
-    def current() -> date:
-        value = _parse(read_value(element), parse_format)
-        if value is None:
-            raise ManualReviewRequired(
-                spec_step, ReviewReason.VALUE_MISMATCH, f"{field_name}: cannot read {read_value(element)!r}"
-            )
-        return value
-
-    def send(keys: str) -> None:
-        keyboard.send_keys(keys, pause=KEY_PAUSE)
-        time.sleep(0.1)
-
-    def selected_part() -> str:
-        """Probe: Up then Down; whichever part moved is the selected field."""
-        before = current()
-        send("{UP}")
-        moved = _changed_part(before, current())
-        send("{DOWN}")
-        return moved
-
-    element.set_focus()
-    # Digits overwrite the selected field and auto-advance when it is complete, so each part is
-    # re-located by probing instead of assuming where the cursor ended up.
-    # Year, then month, then day: the day is set last so it is never clamped by a shorter month/year.
-    for part, digits in (
-        ("year", f"{target.year:04d}"),
-        ("month", f"{target.month:02d}"),
-        ("day", f"{target.day:02d}"),
-    ):
-        steps = (FIELD_ORDER.index(part) - FIELD_ORDER.index(selected_part())) % len(FIELD_ORDER)
-        send("{RIGHT}" * steps + digits if steps else digits)
-
-    commit()  # move focus away so the widget commits its value
-    time.sleep(0.3)
-    if current() != target:
-        raise ManualReviewRequired(
-            spec_step,
-            ReviewReason.VALUE_MISMATCH,
-            f"{field_name}: wanted {target}, field shows {read_value(element)!r}",
-        )
+    text = typed_digits(target, parse_format)
+    shown = ""
+    # Twice at most: a day the previous year did not have (Feb 29) is accepted on the second pass,
+    # once the year is already right.
+    for _ in range(2):
+        height = element.rectangle().height()
+        element.click_input(coords=(3, height // 2))  # left edge of the field's UIA rectangle: first part
+        keyboard.send_keys(text, pause=0.03)
+        commit()  # move focus away so the widget commits its value
+        time.sleep(0.2)
+        shown = read_value(element)
+        if _parse(shown, parse_format) == target:
+            return
+    raise ManualReviewRequired(
+        spec_step, ReviewReason.VALUE_MISMATCH, f"{field_name}: wanted {target}, field shows {shown!r}"
+    )

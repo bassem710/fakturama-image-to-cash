@@ -44,7 +44,11 @@ def extract(
 ) -> None:
     """Spec 1.1-1.2 only: print the normalized order and whether it is internally consistent."""
     settings = load_settings(config)
-    extracted = build_extractor(settings, None, model).extract(image)
+    try:
+        extracted = build_extractor(settings, None, model).extract(image)
+    except ManualReviewRequired as stop:
+        typer.echo(f"MANUAL REVIEW: {stop}")
+        raise typer.Exit(2) from stop
     payload = extracted.model_dump_json(indent=2)
     if out:
         out.write_text(payload, encoding="utf-8")

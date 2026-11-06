@@ -9,11 +9,14 @@ Two interchangeable implementations of the same protocol (Liskov):
 from __future__ import annotations
 
 import mimetypes
+import sys
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Protocol
 
+import httpx
 from google import genai
-from google.genai import types
+from google.genai import errors, types
 
 from imagetocash.domain.review import ManualReviewRequired, ReviewReason
 from imagetocash.extraction.schema import ExtractedOrder
@@ -31,6 +34,18 @@ Rules:
 """
 
 
+RETRYABLE_STATUS = (429, 500, 502, 503, 504)
+NEXT_MODEL_STATUS = (*RETRYABLE_STATUS, 404)  # 404: model retired or not offered to this key
+
+
+def gemini_client() -> genai.Client:
+    """Reads GEMINI_API_KEY; retries rate limits and overloads with exponential backoff."""
+    retry = types.HttpRetryOptions(
+        attempts=4, initial_delay=2.0, max_delay=20.0, http_status_codes=list(RETRYABLE_STATUS)
+    )
+    return genai.Client(http_options=types.HttpOptions(timeout=60_000, retry_options=retry))
+
+
 class OrderExtractor(Protocol):
     def extract(self, image_path: Path) -> ExtractedOrder: ...
 
@@ -39,11 +54,32 @@ class GeminiVisionOrderExtractor:
     """Gemini (Google AI Studio) vision with a response schema: the API returns JSON matching
     ExtractedOrder, which the SDK parses into the pydantic model."""
 
-    def __init__(self, client: genai.Client, model: str = "gemini-flash-latest") -> None:
+    def __init__(
+        self, client: genai.Client, model: str = "gemini-flash-latest", fallback_models: Sequence[str] = ()
+    ) -> None:
         self._client = client
-        self._model = model
+        self._models = (model, *fallback_models)
 
     def extract(self, image_path: Path) -> ExtractedOrder:
+        """Try each model in order. The client already retries 429/5xx with backoff; a model that is
+        still overloaded after that hands over to the next one."""
+        last_error: Exception | None = None
+        for model in self._models:
+            print(f"[1.1] reading the image with {model} ...", file=sys.stderr, flush=True)
+            try:
+                return self._extract_with(model, image_path)
+            except errors.APIError as error:
+                if error.code not in NEXT_MODEL_STATUS:
+                    raise
+                last_error = error
+            except httpx.TransportError as error:  # dropped connection / timeout
+                last_error = error
+            print(f"[1.1] {model} unavailable: {str(last_error)[:120]}", file=sys.stderr, flush=True)
+        raise ManualReviewRequired(
+            "1.1", ReviewReason.EXTRACTION_INVALID, f"every Gemini model unavailable ({last_error})"
+        )
+
+    def _extract_with(self, model: str, image_path: Path) -> ExtractedOrder:
         media_type = mimetypes.guess_type(image_path.name)[0] or "image/png"
         contents = types.Content(
             role="user",
@@ -53,7 +89,7 @@ class GeminiVisionOrderExtractor:
             ],
         )
         response = self._client.models.generate_content(
-            model=self._model,
+            model=model,
             contents=contents,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",

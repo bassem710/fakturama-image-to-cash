@@ -3,6 +3,7 @@ runs_dir: "runs"
 
 extraction:
   model: "gemini-flash-latest"    # Google AI Studio model id (alias of the current Gemini Flash); override with --model
+  fallback_models: ["gemini-3.8-flash", "gemini-pro-latest"]   # tried in order if a model stays overloaded (429/5xx)
   source_date_formats: ["%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y"]
 
 ui:

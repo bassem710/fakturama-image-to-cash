@@ -12,6 +12,7 @@ from imagetocash.extraction.extractors import (
     GeminiVisionOrderExtractor,
     OrderExtractor,
     SavedJsonOrderExtractor,
+    gemini_client,
 )
 from imagetocash.workflow.protocols import FakturamaUi
 from imagetocash.workflow.runner import ImageToCashRunner
@@ -23,12 +24,13 @@ def build_extractor(settings: Settings, from_json: Path | None, model: str | Non
     import os
 
     from dotenv import load_dotenv
-    from google import genai
 
     load_dotenv()
     if not (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")):
         raise RuntimeError("Set GEMINI_API_KEY in .env (Google AI Studio key), or pass --from-json")
-    return GeminiVisionOrderExtractor(genai.Client(), model=model or settings.model)
+    return GeminiVisionOrderExtractor(
+        gemini_client(), model=model or settings.model, fallback_models=settings.fallback_models
+    )
 
 
 def new_run_dir(settings: Settings) -> Path:
