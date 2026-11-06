@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import time
 from collections.abc import Callable
 from typing import Any
 
@@ -85,7 +86,13 @@ def combo_options(combo: Any) -> list[str]:
     """Visible option texts of a ComboBox (its list items exist while it is expanded)."""
     combo.expand()
     try:
-        return [str(item.element_info.name) for item in combo.descendants(control_type="ListItem")]
+        items: list[str] = []
+        deadline = time.monotonic() + 2.0  # the list items appear in the UIA tree a moment after Expand
+        while not items and time.monotonic() < deadline:
+            items = [str(item.element_info.name) for item in combo.descendants(control_type="ListItem")]
+            if not items:
+                time.sleep(0.05)
+        return items
     finally:
         combo.collapse()
 
