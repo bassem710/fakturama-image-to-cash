@@ -1,20 +1,19 @@
 """Spec 1.1: turn the order image into ExtractedOrder.
 
 Two interchangeable implementations of the same protocol (Liskov):
-- ClaudeVisionOrderExtractor: the real one (LLM vision + structured outputs).
+- GeminiVisionOrderExtractor: the real one (Gemini vision + response schema).
 - SavedJsonOrderExtractor:    replays a previous run's extracted.json (no API call, no cost),
                               so the UI flow can be iterated on quickly.
 """
 
 from __future__ import annotations
 
-import base64
 import mimetypes
 from pathlib import Path
-from typing import Protocol, cast
+from typing import Protocol
 
-import anthropic
-from anthropic.types.beta import BetaImageBlockParam, BetaMessageParam, BetaOutputConfigParam, BetaTextBlockParam
+from google import genai
+from google.genai import types
 
 from imagetocash.domain.review import ManualReviewRequired, ReviewReason
 from imagetocash.extraction.schema import ExtractedOrder
@@ -36,56 +35,37 @@ class OrderExtractor(Protocol):
     def extract(self, image_path: Path) -> ExtractedOrder: ...
 
 
-class ClaudeVisionOrderExtractor:
-    def __init__(
-        self,
-        client: anthropic.Anthropic,
-        model: str = "claude-opus-5-5",
-        effort: str = "high",
-        use_refusal_fallbacks: bool = True,
-    ) -> None:
+class GeminiVisionOrderExtractor:
+    """Gemini (Google AI Studio) vision with a response schema: the API returns JSON matching
+    ExtractedOrder, which the SDK parses into the pydantic model."""
+
+    def __init__(self, client: genai.Client, model: str = "gemini-flash-latest") -> None:
         self._client = client
         self._model = model
-        self._effort = effort
-        self._use_refusal_fallbacks = use_refusal_fallbacks
 
     def extract(self, image_path: Path) -> ExtractedOrder:
         media_type = mimetypes.guess_type(image_path.name)[0] or "image/png"
-        image_data = base64.standard_b64encode(image_path.read_bytes()).decode("ascii")
-        image_block = cast(
-            BetaImageBlockParam,
-            {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": image_data}},
+        response = self._client.models.generate_content(
+            model=self._model,
+            contents=[
+                types.Part.from_bytes(data=image_path.read_bytes(), mime_type=media_type),
+                types.Part.from_text(text=EXTRACTION_INSTRUCTIONS),
+            ],
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=ExtractedOrder,
+                temperature=0,  # transcription, not creativity
+            ),
         )
-        text_block: BetaTextBlockParam = {"type": "text", "text": EXTRACTION_INSTRUCTIONS}
-        messages: list[BetaMessageParam] = [{"role": "user", "content": [image_block, text_block]}]
-        output_config = cast(BetaOutputConfigParam, {"effort": self._effort})
-        if self._use_refusal_fallbacks:
-            # Server-side fallback: if Claude Opus 5.5 declines, the API re-runs the request on
-            # Anthropic's recommended fallback model inside the same call.
-            response = self._client.beta.messages.parse(
-                model=self._model,
-                max_tokens=16000,
-                output_config=output_config,
-                output_format=ExtractedOrder,
-                messages=messages,
-                betas=["server-side-fallback-2026-07-01"],
-                fallbacks="default",
-            )
-        else:
-            response = self._client.beta.messages.parse(
-                model=self._model,
-                max_tokens=16000,
-                output_config=output_config,
-                output_format=ExtractedOrder,
-                messages=messages,
-            )
-        if response.stop_reason == "refusal":
-            raise ManualReviewRequired("1.1", ReviewReason.EXTRACTION_INVALID, "model declined the image")
-        if response.parsed_output is None:
-            raise ManualReviewRequired(
-                "1.1", ReviewReason.EXTRACTION_INVALID, f"no structured output (stop: {response.stop_reason})"
-            )
-        return response.parsed_output
+        if isinstance(response.parsed, ExtractedOrder):
+            return response.parsed
+        if response.text:
+            try:
+                return ExtractedOrder.model_validate_json(response.text)
+            except ValueError as error:
+                raise ManualReviewRequired("1.1", ReviewReason.EXTRACTION_INVALID, f"invalid JSON: {error}") from error
+        feedback = response.prompt_feedback.block_reason if response.prompt_feedback else "empty response"
+        raise ManualReviewRequired("1.1", ReviewReason.EXTRACTION_INVALID, f"no structured output ({feedback})")
 
 
 class SavedJsonOrderExtractor:

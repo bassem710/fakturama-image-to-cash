@@ -22,8 +22,6 @@ class Settings:
     fakturama_exe: Path
     runs_dir: Path
     model: str
-    effort: str
-    refusal_fallbacks: bool
     source_date_formats: tuple[str, ...]
     ui_date_format: str
     ocr_language: str
@@ -37,9 +35,7 @@ def load_settings(path: Path) -> Settings:
     return Settings(
         fakturama_exe=Path(raw["fakturama_exe"]),
         runs_dir=Path(raw.get("runs_dir", "runs")),
-        model=extraction.get("model", "claude-opus-5-5"),
-        effort=extraction.get("effort", "high"),
-        refusal_fallbacks=bool(extraction.get("refusal_fallbacks", True)),
+        model=extraction.get("model", "gemini-flash-latest"),
         source_date_formats=tuple(extraction.get("source_date_formats", ["%Y-%m-%d"])),
         ui_date_format=ui.get("date_format", "%b {day}, %Y"),
         ocr_language=ui.get("ocr_language", "en"),

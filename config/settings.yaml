@@ -2,9 +2,7 @@ fakturama_exe: "C:/Program Files/Fakturama2/Fakturama.exe"
 runs_dir: "runs"
 
 extraction:
-  model: "claude-opus-5-5"        # Claude Opus 5.5; override with --model
-  effort: "high"
-  refusal_fallbacks: true         # server-side fallback model if the request is declined
+  model: "gemini-flash-latest"    # Google AI Studio model id (alias of the current Gemini Flash); override with --model
   source_date_formats: ["%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y"]
 
 ui:

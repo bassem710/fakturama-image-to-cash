@@ -23,7 +23,7 @@ DEFAULT_CONFIG = Path("config/settings.yaml")
 def run(
     image: Path,
     from_json: Annotated[Path | None, typer.Option(help="Replay a saved extracted.json (no LLM call)")] = None,
-    model: Annotated[str | None, typer.Option(help="Claude model id")] = None,
+    model: Annotated[str | None, typer.Option(help="Gemini model id")] = None,
     config: ConfigOption = DEFAULT_CONFIG,
 ) -> None:
     """Spec 1.1 -> 5.7: image to a saved, verified Order and linked Invoice."""
@@ -38,7 +38,7 @@ def run(
 @app.command()
 def extract(
     image: Path,
-    model: Annotated[str | None, typer.Option(help="Claude model id")] = None,
+    model: Annotated[str | None, typer.Option(help="Gemini model id")] = None,
     out: Annotated[Path | None, typer.Option(help="Write the extraction JSON here")] = None,
     config: ConfigOption = DEFAULT_CONFIG,
 ) -> None:

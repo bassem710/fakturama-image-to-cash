@@ -10,7 +10,7 @@ requires-python = ">=3.12"
 dependencies = [
     "pywinauto>=0.6.8",
     "comtypes>=1.4",
-    "anthropic>=0.40",
+    "google-genai>=1.0",
     "pydantic>=2.7",
     "typer>=0.12",
     "structlog>=24.1",

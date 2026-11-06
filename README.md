@@ -2,14 +2,14 @@
 
 Turns one order image into a saved, verified **Order** and linked **Invoice** in the Fakturama desktop
 app, following the take-home spec step by step (1.1 → 5.7). It uses **Microsoft UI Automation** to
-drive the app, **Windows OCR** for widgets UIA cannot see into, and **Claude vision** to read the image.
+drive the app, **Windows OCR** for widgets UIA cannot see into, and **Gemini vision (Google AI Studio)** to read the image.
 No hardcoded coordinates: every click target comes from UIA or from OCR inside a UIA rectangle.
 
 ## Status (be honest about what is proven)
 
 | Part | State |
 |---|---|
-| Extraction (1.1–1.2): Claude vision → typed, validated order | Built and unit-tested on the page-3 sample via a recorded extraction. **Live Claude call not yet run** (needs `ANTHROPIC_API_KEY`). |
+| Extraction (1.1–1.2): Gemini vision → typed, validated order | Built and unit-tested on the page-3 sample via a recorded extraction. **Live Claude call not yet run** (needs `GEMINI_API_KEY`). |
 | Spec logic 1.1 → 5.7 (select / create-then-reselect / every manual-review stop) | Built and **tested end to end** against an in-memory Fakturama (`tests/workflow`). |
 | Fakturama controls for every screen in the flow | **Mapped live** (`docs/control-map.md`, `config/selectors.yaml`), including the separate delivery address (2.8) and the payment fields (5.3). |
 | Date fields (Nebula CDateTime) | **Verified live**: `Jul 14, 2026`, `Jan 31`, `Feb 29, 2024` set and committed. |
@@ -26,7 +26,7 @@ No hardcoded coordinates: every click target comes from UIA or from OCR inside a
    python -m venv .venv
    .venv\Scripts\python -m pip install -e ".[dev]"
    ```
-4. Copy `.env.example` to `.env` and set `ANTHROPIC_API_KEY`.
+4. Copy `.env.example` to `.env` and set `GEMINI_API_KEY` (a Google AI Studio key from https://aistudio.google.com/apikey). The model is `extraction.model` in `config/settings.yaml` (default `gemini-flash-latest`).
 5. Optional for control mapping: [Accessibility Insights for Windows](https://accessibilityinsights.io).
 
 ## Run
@@ -47,7 +47,7 @@ line per spec step: expected, observed, result), `NN_<spec-step>.png` screenshot
 ```
 cli ─▶ workflow (stages 1-5 = spec sections, runner) ─▶ domain (pricing, validation, matching; pure)
           ├─▶ fakturama (screen objects + selectors.yaml) ─▶ automation (UIA session, locators, OCR, evidence)
-          └─▶ extraction (Claude vision, parsing)        ─▶ domain
+          └─▶ extraction (Gemini vision, parsing)        ─▶ domain
 ```
 
 - **One stage per spec section.** `workflow/stage1_open_order.py` … `stage5_invoice.py` call the UI in the
@@ -62,7 +62,7 @@ cli ─▶ workflow (stages 1-5 = spec sections, runner) ─▶ domain (pricing,
   line, the net/VAT/gross totals and the payment date **before Fakturama is touched**.
 - **Verify every step:** fields are typed (so SWT recalculates as for a human), read back, retried once,
   then stopped for review.
-- **Only parallel part:** Fakturama's JVM boots while Claude reads the image. Everything after is
+- **Only parallel part:** Fakturama's JVM boots while Gemini reads the image. Everything after is
   sequential, because the spec orders it and there is one UI.
 
 Design rationale and trade-offs: [docs/design-doc.md](docs/design-doc.md). Control discovery:

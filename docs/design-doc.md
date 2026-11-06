@@ -15,7 +15,7 @@ Five layers, with dependencies pointing inward:
 
 - **Domain** (pure, no I/O): order model, money rules (gross master price, line price), the pre-UI
   consistency check, and the exact-match rules for Debtor, Product, VAT and payment method.
-- **Extraction:** image → structured order through Claude vision, then deterministic parsing.
+- **Extraction:** image → structured order through Gemini vision (Google AI Studio), then deterministic parsing.
 - **Workflow:** five stages that mirror the spec's five sections, plus a runner. Stages talk only to small
   per-screen interfaces, so all decision logic is testable without the app.
 - **Fakturama adapters:** one screen object per Fakturama screen. Element selectors live in a config file.
@@ -59,7 +59,7 @@ two consecutive identical reads.
 
 ## 4. Image extraction
 
-- **Claude vision with structured outputs.** One request returns a schema-typed object that mirrors spec
+- **Gemini vision with a response schema.** One request returns a schema-typed object that mirrors spec
   1.2. The model is told to copy values exactly as printed and to use null rather than invent.
 - **Numbers are code's job, not the model's.** Amounts, percentages and dates come back as printed strings
   and are parsed deterministically to `Decimal` and dates.

@@ -32,7 +32,7 @@ Turn one order image into a saved, verified Order and linked Invoice inside the 
 
 ## Code style
 
-- Python 3.12, type hints, small modules under `src/imagetocash/`: `domain/` (pure rules), `extraction/` (Claude vision + parsing), `automation/` (app-agnostic UIA/OCR), `fakturama/` (screen objects), `workflow/` (one stage module per spec section), `cli/`.
+- Python 3.12, type hints, small modules under `src/imagetocash/`: `domain/` (pure rules), `extraction/` (Gemini vision + parsing), `automation/` (app-agnostic UIA/OCR), `fakturama/` (screen objects), `workflow/` (one stage module per spec section), `cli/`.
 - Workflow stages depend only on the protocols in `workflow/protocols.py`; new UI behavior goes into a screen object, new rules into `domain/`.
 - Every UI element is named in `config/selectors.yaml`, not in code.
 - Run `ruff check`, `mypy` and `pytest` before committing.

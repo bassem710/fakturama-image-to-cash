@@ -9,7 +9,7 @@ from pathlib import Path
 from imagetocash.automation.evidence import EvidenceRecorder
 from imagetocash.cli.config import Settings
 from imagetocash.extraction.extractors import (
-    ClaudeVisionOrderExtractor,
+    GeminiVisionOrderExtractor,
     OrderExtractor,
     SavedJsonOrderExtractor,
 )
@@ -20,16 +20,15 @@ from imagetocash.workflow.runner import ImageToCashRunner
 def build_extractor(settings: Settings, from_json: Path | None, model: str | None) -> OrderExtractor:
     if from_json is not None:
         return SavedJsonOrderExtractor(from_json)
-    import anthropic
+    import os
+
     from dotenv import load_dotenv
+    from google import genai
 
     load_dotenv()
-    return ClaudeVisionOrderExtractor(
-        anthropic.Anthropic(),
-        model=model or settings.model,
-        effort=settings.effort,
-        use_refusal_fallbacks=settings.refusal_fallbacks,
-    )
+    if not (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")):
+        raise RuntimeError("Set GEMINI_API_KEY in .env (Google AI Studio key), or pass --from-json")
+    return GeminiVisionOrderExtractor(genai.Client(), model=model or settings.model)
 
 
 def new_run_dir(settings: Settings) -> Path:
