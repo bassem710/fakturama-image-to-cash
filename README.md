@@ -15,6 +15,23 @@ inside UI Automation rectangles. No hardcoded coordinates: every target comes fr
 | Extraction (Gemini) | Live calls verified; outputs validated arithmetically before Fakturama is touched. |
 | Every manual-review stop | Tested on the in-memory Fakturama (`tests/workflow`). |
 
+## Deliverables
+
+| Asked for in the brief | Where |
+|---|---|
+| Part 1 design doc (1–4 pages, no code) | [docs/design-doc.md](docs/design-doc.md) |
+| Source code with a clear structure in a Git repo | `src/imagetocash/` (layers below), tests in `tests/` |
+| Setup instructions: dependencies and how to run against Fakturama | [Setup](#setup) and [Run](#run) below |
+| Annotated screenshots | [docs/evidence/](docs/evidence/README.md): a full live run, spec steps marked |
+| README, with what was skipped | this file, [Not done / next steps](#not-done--next-steps) |
+| Written question (3 more hours) | [Written question](#written-question) |
+
+Spec deviations, all deliberate and documented: the duplicate guard 1.2.1 is an added read-only step;
+the payment method (2.10.1–2.10.6) is created just *before* New Contact, because Fakturama never shows a
+method created while a Debtor editor is open (control map gotcha 15); choosing a row in the two
+selection dialogs is a double-click measured inside the list element, the one pointer action
+(gotcha 7).
+
 ## Setup
 
 1. Windows 10/11, Python 3.12, Fakturama **2.2.0** (`C:\Program Files\Fakturama2`).
@@ -88,13 +105,15 @@ cli ─▶ workflow (guard + stages 1-5 = spec sections) ─▶ domain (pricing,
 - **Verify every step.** Fields are typed (so Fakturama's own listeners run, as for a person), read back, retried once, then stopped for review. Everything Fakturama does that is not obvious is in [docs/control-map.md](docs/control-map.md), under Gotchas.
 - **Fast without skipping checks.** An editor's tab and pane are kept once found, named lookups stop at the first match, and the verified Items line is returned instead of re-read.
 
-Design rationale and trade-offs: [docs/design-doc.md](docs/design-doc.md). Flow diagram:
-[docs/image-to-cash-plan.html](docs/image-to-cash-plan.html).
+- **Dropdowns are searched.** Letters are typed until the combo shows the option, then one arrow away and back so Fakturama's binding takes it (letters alone saved the wrong country, gotcha 19); Up/Down is the fallback.
+
+Design rationale and trade-offs (Part 1 deliverable): [docs/design-doc.md](docs/design-doc.md).
+Annotated screenshots of a full live run: [docs/evidence/](docs/evidence/README.md).
 
 ## Tests
 
 ```bash
-.venv\Scripts\python -m pytest          # 73 tests, no Fakturama or network needed
+.venv\Scripts\python -m pytest          # 82 tests, no Fakturama or network needed
 .venv\Scripts\ruff check src tests
 .venv\Scripts\python -m mypy src
 ```

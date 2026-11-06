@@ -90,7 +90,7 @@ Every field is typed rather than set programmatically, so SWT's own listeners re
 human. It is then read back, retried once, and stopped on mismatch. Line prices, totals, the Documents
 rows (found by the generated document number), the follow-up link and the paid state are checked against
 the source. Each run leaves a JSON log per spec step, numbered screenshots and a report, which double as
-the annotated-screenshot deliverable.
+the annotated-screenshot deliverable (an annotated full run is in [evidence/](evidence/README.md)).
 
 ## 7. Trade-offs
 
