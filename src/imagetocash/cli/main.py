@@ -7,6 +7,7 @@ from typing import Annotated
 
 import typer
 
+from imagetocash.automation.run_log import redact
 from imagetocash.cli.config import load_settings
 from imagetocash.cli.container import build_extractor, build_runner
 from imagetocash.domain.review import ManualReviewRequired
@@ -30,7 +31,7 @@ def run(
     settings = load_settings(config)
     runner, run_dir = build_runner(settings, from_json, model)
     outcome = runner.run(image)
-    typer.echo(f"{outcome.exit_code.name}: {outcome.message}")
+    typer.echo(f"{outcome.exit_code.name}: {redact(outcome.message)}")  # never print order values
     typer.echo(f"Evidence: {run_dir}  Report: {outcome.report}")
     raise typer.Exit(int(outcome.exit_code))
 
@@ -40,23 +41,25 @@ def extract(
     image: Path,
     model: Annotated[str | None, typer.Option(help="Gemini model id")] = None,
     out: Annotated[Path | None, typer.Option(help="Write the extraction JSON here")] = None,
+    show_values: Annotated[bool, typer.Option(help="Print values unmasked (they are order data)")] = False,
     config: ConfigOption = DEFAULT_CONFIG,
 ) -> None:
-    """Spec 1.1-1.2 only: print the normalized order and whether it is internally consistent."""
+    """Spec 1.1-1.2 only: print the extracted order (masked unless --show-values) and whether it is
+    internally consistent."""
     settings = load_settings(config)
     try:
         extracted = build_extractor(settings, None, model).extract(image)
     except ManualReviewRequired as stop:
-        typer.echo(f"MANUAL REVIEW: {stop}")
+        typer.echo(f"MANUAL REVIEW: {redact(str(stop))}")
         raise typer.Exit(2) from stop
     payload = extracted.model_dump_json(indent=2)
     if out:
         out.write_text(payload, encoding="utf-8")
-    typer.echo(payload)
+    typer.echo(payload if show_values else redact(payload))
     try:
         ensure_order_is_consistent(to_order_document(extracted, settings.source_date_formats))
     except ManualReviewRequired as stop:
-        typer.echo(f"MANUAL REVIEW: {stop}")
+        typer.echo(f"MANUAL REVIEW: {redact(str(stop))}")
         raise typer.Exit(2) from stop
     typer.echo("VALID")
 

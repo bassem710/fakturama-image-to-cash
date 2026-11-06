@@ -64,14 +64,12 @@ def set_and_verify(
     reader: Callable[[Any], str] = read_value,
     attempts: int = 2,
 ) -> str:
-    """Set `value` and read it back. First the UIA ValuePattern (fast; verified live that Fakturama's
-    model takes it: the editor turns dirty), then keyboard typing; one retry; then manual review."""
+    """Type `value`, read it back, retry once, then stop for manual review.
+
+    Typing on purpose, not ValuePattern.SetValue: found live that SetValue changes the text on screen
+    (and passes a read-back) while Fakturama's data binding never receives it, so a Debtor was saved
+    without its Company. Keystrokes go through SWT's own listeners, exactly like a person typing."""
     observed = ""
-    with contextlib.suppress(Exception):
-        element.iface_value.SetValue(value)
-        observed = reader(element)
-        if normalize(observed) == normalize(value):
-            return observed
     for _ in range(attempts):
         type_into(element, value)
         observed = reader(element)

@@ -251,10 +251,12 @@ class ScreenContext:
             if not self.tables.has_data_rows(ScreenRect.of(table), expected_headers=tuple(columns)):
                 return []
             copied = copy_table(table)
-            if copied is not None and all(len(row) == len(order) for row in copied):
+            # Fakturama copies some hidden columns after the visible ones (seen in Select the address):
+            # the configured fields are the leading columns, extra trailing cells are ignored.
+            if copied is not None and all(len(row) >= len(order) for row in copied):
                 records = []
                 for row in copied:
-                    record = {field: cell for field, cell in zip(order, row, strict=True) if field}
+                    record = {field: cell for field, cell in zip(order, row[: len(order)], strict=True) if field}
                     for field in percent_fields:  # raw fraction 0.19 -> '19%'
                         if record.get(field):
                             record[field] = _fraction_to_percent(record[field])
