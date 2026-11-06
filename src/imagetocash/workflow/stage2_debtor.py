@@ -57,6 +57,11 @@ class DebtorStage:
 
     def _create_debtor(self, ctx: RunContext) -> None:
         debtor, ev, debtor_ui = ctx.order.debtor, ctx.evidence, self._ui.debtor
+        # Found live (Fakturama 2.2.0): a payment method created while a Debtor editor is open never
+        # appears in that editor's Payment combo; the editor loads the list when it opens. So when
+        # the method is missing it is created (2.10.1-2.10.5, saved once) BEFORE New Contact, and the
+        # fresh Debtor editor offers it at 2.10. Same steps and checks, earlier (decided with the user).
+        self._ensure_payment_method(ctx)
         with ev.spec_step("2.5", "Keep Order open; New Contact in the New panel"):
             debtor_ui.open_new_debtor()
         with ev.spec_step("2.6", "Company, First Name, Last Name; keep Customer ID and Salutation"):
@@ -68,24 +73,22 @@ class DebtorStage:
             debtor_ui.assign_address_roles(debtor)
         with ev.spec_step("2.9", "Miscellaneous: Alias name, Discount 0%, Net"):
             debtor_ui.fill_miscellaneous(debtor)
-        self._resolve_payment_method(ctx)
+        method = ctx.order.payment.method
+        with ev.spec_step("2.10", "Payment: select the exact Payment Method", expected=method) as rec:
+            offered = [o for o in debtor_ui.payment_methods_offered() if normalize_text(o) == normalize_text(method)]
+            if len(offered) != 1:
+                raise ManualReviewRequired(
+                    "2.10", ReviewReason.PAYMENT_METHOD_UNAVAILABLE, f"{method!r} offered {len(offered)}x"
+                )
+            debtor_ui.select_payment_method(offered[0])
+            rec.observed = "selected"
         with ev.spec_step("2.11", "Save the Debtor once"):
             debtor_ui.save()
 
-    def _resolve_payment_method(self, ctx: RunContext) -> None:
+    def _ensure_payment_method(self, ctx: RunContext) -> None:
+        """2.10.1-2.10.5 (+ the single Save of 2.10.6): make sure the exact method exists."""
         method, ev = ctx.order.payment.method, ctx.evidence
-        debtor_ui, payment_list, editor = self._ui.debtor, self._ui.payment_methods, self._ui.payment_method_editor
-
-        with ev.spec_step("2.10", "Payment tab: select the exact Payment Method", expected=method) as rec:
-            offered = [o for o in debtor_ui.payment_methods_offered() if normalize_text(o) == normalize_text(method)]
-            if len(offered) > 1:
-                raise ManualReviewRequired("2.10", ReviewReason.AMBIGUOUS_MATCH, f"{method!r} offered twice")
-            if offered:
-                debtor_ui.select_payment_method(offered[0])
-                rec.observed = "available -> selected"
-                return
-            rec.observed = "not available -> create it (2.10.1)"
-
+        payment_list, editor = self._ui.payment_methods, self._ui.payment_method_editor
         policy = PAYMENT_METHOD_MATCH_POLICY.ocr_tolerant()
         with ev.spec_step("2.10.1", "Data > terms of payment: search the exact method") as rec:
             payment_list.open()
@@ -95,9 +98,7 @@ class DebtorStage:
         with ev.spec_step("2.10.2", "One exact row -> reuse; none -> green +") as rec:
             existing = decide(policy, {"name": method}, rows, "2.10.2")
             if existing is not None:
-                debtor_ui.activate()
-                debtor_ui.select_payment_method(method)
-                rec.observed = "existing method selected in the Debtor editor"
+                rec.observed = "exists -> reuse"
                 return
             payment_code = payment_code_for(method)  # 2.10.4 checked BEFORE anything is created
             payment_list.create_new()
@@ -110,17 +111,8 @@ class DebtorStage:
         ):
             editor.fill(method, payment_code)
 
-        with ev.spec_step("2.10.6", "Save once, back to the Debtor editor, select the new method") as rec:
-            editor.save()  # waits until the editor is saved (no '*')
-            debtor_ui.activate()
-            # The spec's own proof that the method exists: the Debtor's Payment combo now offers it.
-            offered = [o for o in debtor_ui.payment_methods_offered() if normalize_text(o) == normalize_text(method)]
-            if len(offered) != 1:
-                raise ManualReviewRequired(
-                    "2.10.6", ReviewReason.CREATED_RECORD_NOT_FOUND, f"{method!r} offered {len(offered)}x after saving"
-                )
-            debtor_ui.select_payment_method(offered[0])
-            rec.observed = "new method selected"
+        with ev.spec_step("2.10.6", "Save the payment method once"):
+            editor.save()  # waits until the editor is saved (no '*'); 2.10 then selects it
 
     def _check_order_addresses(self, ctx: RunContext, spec_step: str) -> None:
         debtor = ctx.order.debtor
