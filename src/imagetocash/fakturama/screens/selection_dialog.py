@@ -1,14 +1,17 @@
 """'Select the address' / 'Select a product' dialogs (spec 2.2-2.3, 2.12, 3.3, 3.12).
 
 No coordinates: the search box is set through UIA (read back), rows are read from the table by
-clipboard (OCR only as fallback), and the matched row is double-clicked inside the list element
-(the one pointer exception, see fakturama/row_choice.py); OK through Invoke if the dialog stays.
+clipboard (OCR only as fallback), and the matched row is double-clicked inside the list element,
+found there by its key column (`<kind>_pick` in selectors.yaml: the Debtor No., the Item No.; the one
+pointer exception, see fakturama/row_choice.py); OK through Invoke if the dialog stays.
 The caller verifies the effect (addresses populated / a new Items line), as the spec requires.
 
 'Select a product' filters on every keystroke over all columns and applies its row by itself as soon
 as exactly ONE is left. Typing would apply whatever a prefix matches first, so the search text is set
 in ONE modify event (ValuePattern.SetValue; a filter box has no data binding, unlike editor fields),
-and a dialog that closes on its own is reported as `auto_applied` for the caller to verify.
+and a dialog that closes on its own is reported as `auto_applied` for the caller to verify. The
+dialog may close later than the grace period, so it is checked again after the rows are read and
+before every choose/cancel: acting on a dialog that is gone would click whatever lies underneath.
 """
 
 from __future__ import annotations
@@ -22,7 +25,7 @@ from imagetocash.automation.locators import locate
 from imagetocash.automation.run_log import get_logger
 from imagetocash.automation.waiting import WaitTimeout, wait_until
 from imagetocash.domain.review import ManualReviewRequired, ReviewReason
-from imagetocash.fakturama.row_choice import choose_row_with_pointer
+from imagetocash.fakturama.row_choice import open_row_with_pointer
 from imagetocash.fakturama.screen_context import ScreenContext
 
 S = "selection_dialogs"
@@ -33,10 +36,16 @@ _user32 = ctypes.windll.user32
 
 class SelectionDialogScreen:
     def __init__(
-        self, ctx: ScreenContext, dialog: Any, title: str, columns: Mapping[str, str], order: Sequence[str]
+        self,
+        ctx: ScreenContext,
+        dialog: Any,
+        title: str,
+        columns: Mapping[str, str],
+        order: Sequence[str],
+        pick_fields: Sequence[str],
     ) -> None:
         self._ctx, self._dialog, self._title = ctx, dialog, title
-        self._columns, self._order = columns, order
+        self._columns, self._order, self._pick_fields = columns, order, tuple(pick_fields)
         self._rows: list[dict[str, str]] = []
         self.auto_applied = False  # Fakturama applied its only filter hit and closed the dialog
 
@@ -46,32 +55,46 @@ class SelectionDialogScreen:
         title = str(ctx.selectors.value(S, f"{kind}_title"))
         dialog = ctx.session.wait_for_dialog(title, ctx.settings.timeouts.dialog)
         columns = dict(ctx.selectors.value(S, f"{kind}_columns"))
-        return cls(ctx, dialog, title, columns, list(ctx.selectors.value(S, f"{kind}_order")))
+        order = list(ctx.selectors.value(S, f"{kind}_order"))
+        return cls(ctx, dialog, title, columns, order, list(ctx.selectors.value(S, f"{kind}_pick")))
 
     def search(self, text: str) -> list[dict[str, str]]:
         search_box = locate(self._dialog, self._ctx.selectors.locator(S, "search"))
         search_box.iface_value.SetValue(text)  # one modify event: no prefix can auto-apply a wrong row
         try:
             wait_until(lambda: not self._is_open(), timeout=AUTO_APPLY_GRACE_SECONDS, what="auto-apply", interval=0.05)
-            self.auto_applied = True
-            self._ctx.invalidate()
-            return []
+            return self._closed_by_itself()
         except WaitTimeout:
             pass  # still open: read the filtered list
-        shown = read_value(search_box)
+        try:
+            shown = read_value(search_box)
+            rows = self._ctx.lists.read(self._table(), self._columns, self._order)
+        except Exception:
+            if not self._is_open():  # it applied its hit while we were reading
+                return self._closed_by_itself()
+            raise
+        if not self._is_open():
+            return self._closed_by_itself()
         if shown != text:
             raise ManualReviewRequired(
                 "-", ReviewReason.VALUE_MISMATCH, f"{self._title} search: set {text!r}, field shows {shown!r}"
             )
-        self._rows = self._ctx.lists.read(self._table(), self._columns, self._order)
+        self._rows = rows
         return [dict(record) for record in self._rows]
+
+    def _closed_by_itself(self) -> list[dict[str, str]]:
+        self.auto_applied = True
+        self._rows = []
+        self._ctx.invalidate()
+        return []
 
     def choose(self, row: Mapping[str, str]) -> None:
         self._require_open()
-        index = next((i for i, record in enumerate(self._rows) if record == dict(row)), None)
-        if index is None:
+        if dict(row) not in self._rows:
             raise ManualReviewRequired("-", ReviewReason.UI_ELEMENT_NOT_FOUND, f"row vanished from {self._title}")
-        choose_row_with_pointer(self._table(), self._ctx.ocr, index, tuple(self._columns))  # double-click only
+        open_row_with_pointer(
+            self._table(), self._ctx.ocr, self._columns, row, self._pick_fields
+        )  # the pointer exception
         try:
             self._ctx.session.wait_for_dialog_closed(self._title, timeout=DOUBLE_CLICK_CLOSE_SECONDS)
         except WaitTimeout:
@@ -96,7 +119,8 @@ class SelectionDialogScreen:
         return bool(_user32.IsWindow(handle) and _user32.IsWindowVisible(handle))
 
     def _require_open(self) -> None:
-        if self.auto_applied:
+        if self.auto_applied or not self._is_open():
+            self.auto_applied = True
             raise ManualReviewRequired(
                 "-", ReviewReason.VALUE_MISMATCH, f"{self._title} applied a record by itself; nothing to choose"
             )

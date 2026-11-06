@@ -19,22 +19,37 @@ class ParseError(ValueError):
 def parse_amount(text: str) -> Decimal:
     """'EUR 1.234,56' -> 1234.56, '570.00' -> 570.00, '10%' -> 10, '-3,5' -> -3.5.
 
-    The decimal separator is the LAST '.' or ',' when it is followed by 1-2 digits;
-    any other separator is a thousands separator.
+    Which separator is the decimal one:
+    - both '.' and ',' present: the LAST one ('1.234,567' -> 1234.567);
+    - one separator kind, used more than once: thousands ('1.234.567');
+    - one separator, once: decimal, unless exactly 3 digits follow AND a non-zero group of 1-3
+      digits precedes it, which is the thousands form ('1.234' -> 1234, but '0,125' -> 0.125).
     """
     cleaned = _NUMBER_CHARS.sub("", fix_ocr_percent(text or ""))
     if not cleaned or cleaned in {"-", ".", ","}:
         raise ParseError(f"no number in {text!r}")
-    last_sep = max(cleaned.rfind("."), cleaned.rfind(","))
-    if last_sep != -1 and 1 <= len(cleaned) - last_sep - 1 <= 2:
-        integer_part = cleaned[:last_sep].replace(".", "").replace(",", "")
-        normalized = f"{integer_part}.{cleaned[last_sep + 1 :]}"
-    else:
-        normalized = cleaned.replace(".", "").replace(",", "")
+    normalized = _with_decimal_point(cleaned)
     try:
         return Decimal(normalized)
     except InvalidOperation as error:
         raise ParseError(f"cannot read {text!r} as a number") from error
+
+
+def _with_decimal_point(cleaned: str) -> str:
+    """`cleaned` holds only digits, '-', '.' and ','; returns it with '.' as the only separator."""
+    last_sep = max(cleaned.rfind("."), cleaned.rfind(","))
+    if last_sep == -1:
+        return cleaned
+    integer_part, fraction = cleaned[:last_sep], cleaned[last_sep + 1 :]
+    separator = cleaned[last_sep]
+    other = "," if separator == "." else "."
+    is_decimal = other in cleaned or (
+        separator not in integer_part
+        and not (len(fraction) == 3 and 1 <= len(integer_part.lstrip("-")) <= 3 and integer_part.strip("-0"))
+    )
+    if not is_decimal:
+        return cleaned.replace(".", "").replace(",", "")
+    return f"{integer_part.replace('.', '').replace(',', '')}.{fraction}"
 
 
 def parse_percent(text: str | None, default: Decimal = Decimal(0)) -> Decimal:

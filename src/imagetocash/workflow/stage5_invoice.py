@@ -44,15 +44,10 @@ class InvoiceStage:
         with ev.spec_step("5.4", "Click the toolbar Save once"):
             invoice.save()
 
+        # 5.5 / 5.6: the Documents list is read from the database, so its State column is the proof
+        # that the payment status was PERSISTED (the open editor would only show what was typed).
         with ev.spec_step("5.5", "Data > Documents: Invoice state/Total; Order still open") as rec:
-            invoice_state = self._check_documents(ctx)
-            rec.observed = invoice_state or "state column not readable"
-
-        if not invoice_state:  # the list did not show a state: read the saved Invoice instead
-            with ev.spec_step("5.6", "Reopen the Invoice to confirm the persisted payment data") as rec:
-                state = invoice.read_payment_state()
-                rec.observed = str(state)
-                check_payment_state(state, ctx, "5.6")
+            rec.observed = self._check_documents(ctx)
 
         with ev.spec_step("5.7", "End: no Delivery, Correction or Dunning document"):
             pass
@@ -80,7 +75,7 @@ class InvoiceStage:
 
     def _check_documents(self, ctx: RunContext) -> str:
         """5.5: one Invoice row (total, state) and the source Order still open. Returns the Invoice
-        state as the list shows it ('' when the column is not readable)."""
+        state as the list shows it; an unreadable state stops the run (persistence unproven)."""
         order, documents = ctx.order, self._ui.documents
         documents.open()
         rows = documents.rows_for_reference(order.external_reference)
@@ -89,7 +84,11 @@ class InvoiceStage:
         check_amount(order.totals.gross, invoice_row.get("total", ""), "5.5", "Invoice row Total")
         state = normalize_text(invoice_row.get("state", ""))
         expected = "paid" if order.payment.is_paid else "open"
-        if state and expected not in state:
+        if not state:
+            raise ManualReviewRequired(
+                "5.6", ReviewReason.VALUE_MISMATCH, "Invoice State not readable in Documents: payment status unproven"
+            )
+        if state != expected:
             raise ManualReviewRequired("5.5", ReviewReason.VALUE_MISMATCH, f"Invoice state {state!r}")
         return state
 

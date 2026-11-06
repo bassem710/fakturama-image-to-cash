@@ -25,3 +25,8 @@ def test_country_must_be_a_whole_line_not_a_substring() -> None:
     niger = Address("Shop", "Rue 1", "8001", "Niamey", "Niger")
     assert address_lines_missing("Shop\nRue 1\n8001 Niamey\nNigeria", niger) == ["country"]
     assert address_lines_missing("Shop\nRue 1\n8001 Niamey\n  NIGER ", niger) == []
+
+
+def test_zip_and_street_must_not_be_part_of_a_longer_value() -> None:
+    short = Address("Northstar Office GmbH", "Friedrichstrasse 8", "1011", "Berlin", "Germany")
+    assert address_lines_missing(SHOWN, short) == ["street", "zip"]

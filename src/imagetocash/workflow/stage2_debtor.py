@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from imagetocash.domain.matching import DEBTOR_MATCH_POLICY, PAYMENT_METHOD_MATCH_POLICY
 from imagetocash.domain.payment_codes import payment_code_for
+from imagetocash.domain.review import ManualReviewRequired, ReviewReason
 from imagetocash.workflow.checks import check_order_addresses, exactly_one_option
 from imagetocash.workflow.context import RunContext
-from imagetocash.workflow.protocols import FakturamaUi
+from imagetocash.workflow.protocols import FakturamaUi, Row, SelectionDialogUi
 from imagetocash.workflow.resolver import decide, require_exact
 
 
@@ -23,7 +24,7 @@ class DebtorStage:
             dialog = order_ui.open_address_selector()
 
         with ev.spec_step("2.2", "Search by company / customer name", expected=debtor.search_text) as rec:
-            rows = dialog.search(debtor.search_text)
+            rows = _searched(dialog, debtor.search_text, "2.2")
             rec.observed = f"{len(rows)} row(s)"
 
         with ev.spec_step("2.3", "Exact match on Company, First Name, Name, ZIP, City") as rec:
@@ -46,7 +47,7 @@ class DebtorStage:
         with ev.spec_step("2.12", "Back on the Order: search again, select the new Debtor, OK") as rec:
             order_ui.activate()
             dialog = order_ui.open_address_selector()
-            row = require_exact(self._policy, wanted, dialog.search(debtor.search_text), "2.12")
+            row = require_exact(self._policy, wanted, _searched(dialog, debtor.search_text, "2.12"), "2.12")
             dialog.choose(row)
             ctx.debtor_row = row
             rec.observed = "new Debtor selected"
@@ -107,3 +108,14 @@ class DebtorStage:
 
         with ev.spec_step("2.10.6", "Save the payment method once"):
             editor.save()  # waits until the editor is saved (no '*'); 2.10 then selects it
+
+
+def _searched(dialog: SelectionDialogUi, text: str, spec_step: str) -> list[Row]:
+    """The address selector's rows. If the dialog applied a record by itself, nothing proves that
+    record is the exact Debtor (2.3), so stop instead of guessing."""
+    rows = list(dialog.search(text))
+    if dialog.auto_applied:
+        raise ManualReviewRequired(
+            spec_step, ReviewReason.CONFLICTING_MATCH, "Select the address applied a record by itself"
+        )
+    return rows

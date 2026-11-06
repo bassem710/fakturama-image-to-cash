@@ -17,6 +17,7 @@ from imagetocash.automation.input import escape_send_keys, read_value, select_co
 from imagetocash.automation.locators import find_first, largest_leaf_pane
 from imagetocash.automation.waiting import wait_until
 from imagetocash.domain.models import LineItem
+from imagetocash.domain.pricing import round_money
 from imagetocash.domain.review import ManualReviewRequired, ReviewReason
 from imagetocash.fakturama.screen_context import ScreenContext
 from imagetocash.fakturama.screens.base_editor import EditorScreen
@@ -127,7 +128,7 @@ class OrderEditorScreen(EditorScreen):
         record = self._line(table, line_index)
         wanted = {
             "quantity": format(item.quantity.normalize(), "f"),
-            "unit_price": f"{item.unit_net_price:.2f}",
+            "unit_price": str(round_money(item.unit_net_price)),
             "discount": format(item.discount_percent.normalize(), "f"),
         }
         order = self._item_order()

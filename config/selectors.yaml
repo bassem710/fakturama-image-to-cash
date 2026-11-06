@@ -74,6 +74,10 @@ selection_dialogs:                      # top-level #32770 windows
   product_order: [sku, name, description, stock, price, vat]
   address_columns: {"No.": number, "First Name": first_name, "Name": last_name, "Company": company, "ZIP": zip, "City": city}
   product_columns: {"Item No.": sku, "Name": name, "Description": description, "Price": price, "VAT": vat}
+  # The column that identifies the matched row ON SCREEN for the double-click (row_choice.py): the
+  # Debtor's own No. and the Item No. are unique, short and read reliably by OCR.
+  address_pick: [number]
+  product_pick: [sku]
 
 lists:
   search: {by: label, label: "Search:", target: Edit}
@@ -82,6 +86,7 @@ lists:
   payment_order: [standard, name, description, discount, discount_days, net_days]
   documents_order: [type, number, date, customer, reference, state, total, printed]
   vat_columns: {"Name": name, "Description": description, "Value": value}    # no VAT code column (see VatListScreen)
+  vat_pick: [name, value]          # the row double-clicked to open a rate and read its VAT code
   payment_columns: {"Name": name, "Description": description}
   documents_columns: {"Document": number, "Date": date, "Name": customer, "Cust.Ref.": reference, "State": state, "Total": total}
   document_type_by_prefix: {"PO": order, "IN": invoice}

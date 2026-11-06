@@ -8,6 +8,7 @@ import re
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
+from imagetocash.domain.pricing import round_money
 from imagetocash.extraction.parsing import ParseError, parse_amount
 
 _JAVA_DATE = re.compile(r"[A-Za-z]{3} (?P<md>[A-Za-z]{3} \d{1,2}) \d{2}:\d{2}:\d{2} \S+ (?P<y>\d{4})")
@@ -35,7 +36,7 @@ def is_zero(text: str) -> bool:
 def money_text(text: str) -> str:
     """'$1,234.5' -> '1234.50' (two decimals); unreadable text is returned stripped."""
     try:
-        return f"{parse_amount(text):.2f}"
+        return str(round_money(parse_amount(text)))
     except (ParseError, InvalidOperation):
         return text.strip()
 

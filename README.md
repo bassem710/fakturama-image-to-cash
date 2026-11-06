@@ -72,8 +72,8 @@ a passing run is in [docs/evidence/](docs/evidence/README.md).
 Spec deviations, all deliberate and documented: the duplicate guard 1.2.1 is an added read-only step;
 the payment method (2.10.1–2.10.6) is created just *before* New Contact, because Fakturama never shows a
 method created while a Debtor editor is open (control map gotcha 15); choosing a row in the two
-selection dialogs is a double-click measured inside the list element, the one pointer action
-(gotcha 7).
+selection dialogs (and opening an existing VAT rate to read its code) is a double-click measured
+inside the list element, the one pointer action (gotcha 7).
 
 **Re-runs never book an order twice.** Before step 1.3 creates anything, step 1.2.1 searches Data >
 Documents for the image's External Reference. This is a read-only addition to the spec:
@@ -128,9 +128,9 @@ Annotated screenshots of a full live run: [docs/evidence/](docs/evidence/README.
 ## Not done / next steps
 
 1. **Partial earlier work is not resumed.** An Order without its Invoice (e.g. a run stopped at 4.6) stops for manual review instead of finishing the Invoice. Resuming would need to open an existing document from the Documents list, which only works by double-click.
-2. **VAT code of a pre-existing rate is not opened** (3.5). The list has no code column and a row opens only by double-click, so an existing `VAT 19%` is matched on Name + Value and the gap is logged. Rates the script creates always get code S.
+2. **VAT code of a pre-existing rate: not yet verified live** (3.5). The list has no code column, so a rate named like the wanted one is opened by double-click (the pointer exception, row found by Name + Value), its `VAT code (E-Invoice)` is read, and its editor is left open unchanged. The reading path is unit-tested only; a live run against a database that already holds the rate is still to do.
 3. **Order-level discount / shipping from the image** (4.2) stops for review instead of being set.
-4. **The selection-dialog row choice** is a double-click at a point measured inside the list element (the one pointer exception).
+4. **The row choice** (selection dialogs, VAT list) is a double-click at a point measured inside the list element (the one pointer exception). The row is found on screen by its key column (Debtor No., Item No., VAT Name + Value); if that cell is not read exactly once, the run stops for review.
 5. Live runs so far: Fakturama 2.2.0, en_US, one machine (maximized window on 1920×1080 and 2560×1440
    screens). Other window sizes and scaling factors are not yet verified live.
 

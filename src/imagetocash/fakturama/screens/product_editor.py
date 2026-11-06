@@ -6,6 +6,7 @@ from decimal import Decimal
 
 from imagetocash.automation.input import combo_options, read_value, select_combo_option, set_and_verify
 from imagetocash.domain.models import LineItem
+from imagetocash.domain.pricing import round_money
 from imagetocash.fakturama.screen_context import ScreenContext
 from imagetocash.fakturama.screens.base_editor import EditorScreen
 from imagetocash.fakturama.values import is_zero, money_text
@@ -38,7 +39,7 @@ class ProductEditorScreen(EditorScreen):
         )
         set_and_verify(
             self._field("price_gross"),
-            f"{gross_price:.2f}",
+            str(round_money(gross_price)),
             spec_step="3.9",
             field_name="Price (gross)",
             normalize=money_text,

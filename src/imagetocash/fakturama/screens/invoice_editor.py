@@ -8,6 +8,7 @@ from decimal import Decimal
 
 from imagetocash.automation.date_input import set_cdatetime
 from imagetocash.automation.input import combo_options, read_value, select_combo_option, set_and_verify, set_checkbox
+from imagetocash.domain.pricing import round_money
 from imagetocash.fakturama.screen_context import ScreenContext
 from imagetocash.fakturama.screens.base_editor import EditorScreen
 from imagetocash.fakturama.screens.order_editor import OrderEditorScreen
@@ -70,7 +71,11 @@ class InvoiceEditorScreen(EditorScreen):
             field_name="payment date",
         )
         set_and_verify(
-            self._field("paid_value"), f"{value:.2f}", spec_step="5.3", field_name="Value", normalize=money_text
+            self._field("paid_value"),
+            str(round_money(value)),
+            spec_step="5.3",
+            field_name="Value",
+            normalize=money_text,
         )
 
     def read_payment_state(self) -> dict[str, str]:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
@@ -39,11 +40,17 @@ def address_lines_missing(address_text: str, expected: Address) -> list[str]:
     Found live: a wrong country (Georgia for Germany) was saved while street, ZIP and city matched."""
     haystack = normalize_ocr_text(address_text)
     parts = {"street": expected.street, "zip": expected.zip_code, "city": expected.city}
-    missing = [label for label, value in parts.items() if normalize_ocr_text(value) not in haystack]
+    missing = [label for label, value in parts.items() if not _contains_whole(haystack, normalize_ocr_text(value))]
     lines = {normalize_ocr_text(line) for line in address_text.splitlines()}
     if expected.country and normalize_ocr_text(expected.country) not in lines:
         missing.append("country")
     return missing
+
+
+def _contains_whole(haystack: str, value: str) -> bool:
+    """`value` appears in `haystack` NOT glued to another letter or digit: ZIP '1011' is not in
+    '10117' and street 'Hauptstr. 1' is not in 'Hauptstr. 12' ('DE-10117' still contains '10117')."""
+    return not value or re.search(rf"(?<![^\W_]){re.escape(value)}(?![^\W_])", haystack) is not None
 
 
 def check_address(address_text: str, expected: Address, spec_step: str, role: str) -> None:

@@ -5,7 +5,7 @@ from pathlib import Path
 
 SRC = Path(__file__).parent.parent.parent / "src"
 FORBIDDEN = re.compile(r"click_point|coords\s*=|mouse\.|double_click|from pywinauto import mouse")
-# The single documented exception, decided with the user: choosing a row in the selection dialogs.
+# The single documented exception, decided with the user: opening a row of a custom-drawn list.
 ALLOWED = {Path("imagetocash/fakturama/row_choice.py")}
 
 

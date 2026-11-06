@@ -3,20 +3,25 @@
 
 from __future__ import annotations
 
+import time
 from decimal import Decimal
 
 from imagetocash.automation.input import read_value, select_combo_option, set_and_verify
 from imagetocash.automation.locators import locate
 from imagetocash.automation.run_log import get_logger
-from imagetocash.automation.waiting import wait_until
+from imagetocash.automation.waiting import WaitTimeout, wait_until
 from imagetocash.domain.matching import normalize_ocr_text
 from imagetocash.domain.review import ManualReviewRequired, ReviewReason
+from imagetocash.fakturama.row_choice import open_row_with_pointer
 from imagetocash.fakturama.screen_context import ScreenContext
 from imagetocash.fakturama.screens.base_editor import EditorScreen
 from imagetocash.fakturama.values import is_zero, number_text
 from imagetocash.fakturama.workbench import EditorTab
 
 L = "lists"
+# An EMPTY search result is only believed once the list has stayed empty this long: while it
+# re-filters it can be blank for a moment, and "no rows" lets the caller CREATE a record.
+EMPTY_CONFIRM_SECONDS = 1.0
 
 
 class MasterDataListScreen:
@@ -47,11 +52,17 @@ class MasterDataListScreen:
         )
         table = self._ctx.lists.table_in(pane)
         wanted = normalize_ocr_text(text)
+        empty_since: list[float] = []
 
         def filtered() -> list[dict[str, str]] | None:
             """The list re-filters asynchronously: accept a read only once every row contains the
-            search text, so a stale, unfiltered list is never taken as the answer."""
+            search text, so a stale, unfiltered list is never taken as the answer, and an empty read
+            only once it stays empty (EMPTY_CONFIRM_SECONDS)."""
             rows = self._ctx.lists.read(table, self._columns, self._order, self._percent_fields)
+            if not rows:
+                empty_since[:] = empty_since or [time.monotonic()]
+                return rows if time.monotonic() - empty_since[0] >= EMPTY_CONFIRM_SECONDS else None
+            empty_since.clear()
             return rows if all(wanted in normalize_ocr_text(" ".join(r.values())) for r in rows) else None
 
         return wait_until(
@@ -71,23 +82,38 @@ class MasterDataListScreen:
 
 
 class VatListScreen(MasterDataListScreen):
-    """Data > VATs. The list shows Name, Description and Value but not the VAT code, and Fakturama
-    opens a row only by double-clicking it (no keyboard or pattern route; verified live). By your
-    decision the code of a PRE-EXISTING rate is therefore not opened: rows carry code 'S' and the
-    gap is logged. Rates the script creates always get code S (3.6)."""
+    """Data > VATs. The list shows Name, Description and Value but not the VAT code (spec 3.5 needs
+    it), and Fakturama opens a row only by double-clicking it (no keyboard or pattern route; verified
+    live). So each row named like the wanted rate is opened through the pointer exception
+    (row_choice.py, found by its Name and Value), its 'VAT code (E-Invoice)' is read, and the list
+    view is brought back. The opened editor is only read: never edited or saved."""
 
     def __init__(self, ctx: ScreenContext) -> None:
         super().__init__(ctx, "vats", "vat", percent_fields=("value",))
+        self._pick_fields = list(ctx.selectors.value(L, "vat_pick"))
 
     def search(self, text: str) -> list[dict[str, str]]:
         rows = super().search(text)
         for record in rows:
             if normalize_ocr_text(record.get("name", "")) == normalize_ocr_text(text):
-                record["code"] = "S"
-                get_logger().info(
-                    "3.5     VAT code of the existing rate not opened (no UIA route); Name and Value matched"
-                )
+                record["code"] = self._read_code(record)
         return rows
+
+    def _read_code(self, record: dict[str, str]) -> str:
+        ctx, workbench = self._ctx, self._ctx.workbench
+        table = ctx.lists.table_in(workbench.content_pane(self._title))
+        before = workbench.snapshot()
+        open_row_with_pointer(table, ctx.ocr, self._columns, record, self._pick_fields)
+        try:
+            tab = workbench.wait_for_new(before)
+        except WaitTimeout as error:  # e.g. the rate's editor was already open and only got focus
+            raise ManualReviewRequired(
+                "3.5", ReviewReason.UI_ELEMENT_NOT_FOUND, f"could not open {record.get('name')!r} to read its VAT code"
+            ) from error
+        code = read_value(ctx.find("vat_editor", "code", scope=workbench.pane(tab)))
+        get_logger().info("3.5     VAT code of the existing rate read from its editor (left open, unchanged)")
+        workbench.activate_view(self._title)
+        return code
 
 
 class RecordEditorScreen(EditorScreen):

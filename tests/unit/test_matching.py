@@ -87,3 +87,16 @@ def test_row_mentioning_the_identity_blocks_creation() -> None:
     row = {"name": "", "description": "VAT 19%", "value": "19.00 %", "code": "S"}
     wanted = {"name": "VAT 19%", "value": "19", "code": "S"}
     assert isinstance(VAT_MATCH_POLICY.ocr_tolerant().evaluate(wanted, [row]), ConflictingMatch)
+
+
+def test_truncated_cell_outside_the_search_field_is_not_an_exact_match() -> None:
+    # 'CHR-ERG-...' may be CHR-ERG-02: only a field the list was filtered on may be truncated
+    row = {"sku": "CHR-ERG-..."}
+    outcome = PRODUCT_MATCH_POLICY.ocr_tolerant().evaluate({"sku": "CHR-ERG-01"}, [row])
+    assert isinstance(outcome, ConflictingMatch)
+
+
+def test_private_customer_mentioned_in_a_misread_row_blocks_creation() -> None:
+    wanted = {"company": "", "first_name": "Marta", "last_name": "Klein", "zip": "10117", "city": "Berlin"}
+    misread = {"company": "", "first_name": "", "last_name": "Marta Klein", "zip": "10117", "city": "Berlin"}
+    assert isinstance(DEBTOR_MATCH_POLICY.ocr_tolerant().evaluate(wanted, [misread]), ConflictingMatch)

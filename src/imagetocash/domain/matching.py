@@ -93,6 +93,11 @@ class RecordMatchPolicy:
     checked_fields: tuple[str, ...] = ()
     normalizers: Mapping[str, Normalizer] = field(default_factory=dict)
     default_normalizer: Normalizer = normalize_text
+    # Fields whose list cell may be truncated ('Northstar Offi...') and still count as exact. Only a
+    # field the list was already FILTERED on belongs here: the filter guarantees the full value is in
+    # the row, so the prefix cannot belong to another record. A truncated cell in any other field
+    # makes the row a near-miss (stop), never an exact match.
+    truncatable_fields: tuple[str, ...] = ()
 
     def ocr_tolerant(self) -> RecordMatchPolicy:
         """Same rules, for rows that were read by OCR."""
@@ -102,24 +107,32 @@ class RecordMatchPolicy:
         normalize = self.normalizers.get(field_name, self.default_normalizer)
         return normalize(record.get(field_name, ""))
 
-    def _field_equal(self, wanted: Record, row: Record, field_name: str) -> bool:
+    def _compare(self, wanted: Record, row: Record, field_name: str) -> str:
+        """'same', 'prefix' (a truncated cell whose visible part matches) or 'differs'."""
         expected, shown = self._normalized(wanted, field_name), self._normalized(row, field_name)
         if shown.endswith(_ELLIPSIS):  # a narrow list column truncated the value: compare the prefix
             prefix = shown.rstrip(".…").strip()
-            return len(prefix) >= 3 and expected.startswith(prefix)
-        return expected == shown
+            return "prefix" if len(prefix) >= 3 and expected.startswith(prefix) else "differs"
+        return "same" if expected == shown else "differs"
 
-    def _fields_equal(self, wanted: Record, row: Record, field_names: Sequence[str]) -> bool:
-        return all(self._field_equal(wanted, row, f) for f in field_names)
+    def _exact(self, wanted: Record, row: Record, field_names: Sequence[str]) -> bool:
+        for name in field_names:
+            result = self._compare(wanted, row, name)
+            if result == "differs" or (result == "prefix" and name not in self.truncatable_fields):
+                return False
+        return True
+
+    def _related(self, wanted: Record, row: Record, field_names: Sequence[str]) -> bool:
+        return all(self._compare(wanted, row, f) != "differs" for f in field_names)
 
     def evaluate(self, wanted: Record, rows: Sequence[Record]) -> MatchOutcome:
         all_fields = (*self.identity_fields, *self.checked_fields)
-        exact_rows = tuple(r for r in rows if self._fields_equal(wanted, r, all_fields))
+        exact_rows = tuple(r for r in rows if self._exact(wanted, r, all_fields))
         if len(exact_rows) == 1:
             return ExactMatch(exact_rows[0])
         if len(exact_rows) > 1:
             return AmbiguousMatch(exact_rows)
-        conflicting_rows = tuple(r for r in rows if self._fields_equal(wanted, r, self.identity_fields))
+        conflicting_rows = tuple(r for r in rows if self._related(wanted, r, self.identity_fields))
         if conflicting_rows:
             return ConflictingMatch(conflicting_rows)
         # Duplicate guard: a row that mentions the identity anywhere (e.g. a misread column) is a
@@ -130,15 +143,19 @@ class RecordMatchPolicy:
         return NoMatch()
 
     def _mentions_identity(self, wanted: Record, row: Record) -> bool:
+        """Every NON-EMPTY identity value appears somewhere in the row (a private customer has no
+        company; its names still count)."""
         joined = normalize_ocr_text(" ".join(row.values()))
-        identity = [normalize_ocr_text(wanted.get(f, "")) for f in self.identity_fields]
-        return all(value and value in joined for value in identity)
+        identity = [v for f in self.identity_fields if (v := normalize_ocr_text(wanted.get(f, "")))]
+        return bool(identity) and all(value in joined for value in identity)
 
 
 # Spec 2.3: Company, First Name, Name, ZIP and City must all match.
+# The address selector is searched by the company (Debtor.search_text), so only that cell may be truncated.
 DEBTOR_MATCH_POLICY = RecordMatchPolicy(
     identity_fields=("company", "first_name", "last_name"),
     checked_fields=("zip", "city"),
+    truncatable_fields=("company",),
 )
 
 # Spec 3.3: exact SKU (Fakturama's "Item Number").

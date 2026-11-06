@@ -25,7 +25,11 @@ class SaveOrderStage:
             order_ui.activate()
             check_order_addresses(order_ui.read_address_texts(), order.debtor, "4.1")
             lines = order_ui.read_item_lines()
-            for row, item in zip(lines, order.items, strict=False):
+            if len(lines) != len(order.items):
+                raise ManualReviewRequired(
+                    "4.1", ReviewReason.VALUE_MISMATCH, f"{len(lines)} lines on screen, {len(order.items)} on image"
+                )
+            for row, item in zip(lines, order.items, strict=True):
                 check_item_line(row, item, "4.1")
 
         with ev.spec_step("4.2", "Discount 0%, Shipping free / 0.00 unless the image says otherwise"):

@@ -26,6 +26,11 @@ FIXTURE = Path(__file__).parent.parent / "fixtures" / "northstar_extracted.json"
         ("-3,5", D("-3.5")),
         ("1.234", D("1234")),
         ("250", D("250")),
+        ("0,125", D("0.125")),  # a zero integer part is never a thousands group
+        ("1.234,567", D("1234.567")),  # both separators: the last one is the decimal point
+        ("1234.567", D("1234.567")),  # four leading digits are not a thousands group
+        ("1.234.567", D("1234567")),
+        ("12.", D("12")),
     ],
 )
 def test_parse_amount(text: str, expected: D) -> None:
