@@ -66,3 +66,26 @@ def test_typed_date_digits_follow_the_display_format() -> None:
 
     assert typed_digits(date(2026, 7, 14), "%b %d, %Y") == "07142026"  # en_US: Jul 14, 2026
     assert typed_digits(date(2026, 7, 14), "%d.%m.%Y") == "14072026"  # de_DE: 14.07.2026
+
+
+def test_ocr_grid_glyphs_split_columns_and_merged_titles_are_split() -> None:
+    def word(text: str, left: float, top: float, width: float) -> OcrWord:
+        return OcrWord(text, left, top, left + width, top + 14)
+
+    header = [  # OCR of a focused (dark) header: grid lines read as ',', one line missed entirely
+        word("Standard", 5, 5, 60),
+        word(",", 120, 5, 4),
+        word("Name", 130, 5, 40),
+        word("Description", 255, 5, 80),
+        word("Discount", 380, 5, 60),
+    ]
+    cells = [
+        word("Bank", 131, 35, 34),
+        word("Transfer", 169, 35, 60),
+        word("Bank", 256, 35, 34),
+        word("Transfer", 294, 35, 60),
+    ]
+    table = build_table(header + cells, ("Name", "Description"), separators=[250])
+    assert [c for c, _ in table.columns] == ["Standard", "Name", "Description", "Discount"]
+    assert table.rows[0].cells["Name"] == "Bank Transfer"
+    assert table.rows[0].cells["Description"] == "Bank Transfer"

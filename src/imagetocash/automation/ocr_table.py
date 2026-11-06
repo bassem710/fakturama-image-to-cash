@@ -40,14 +40,24 @@ class OcrTable:
         return None
 
 
+def _is_punctuation(text: str) -> bool:
+    """OCR reads header grid lines as stray ',', '|', '.' tokens: they are column boundaries, not titles."""
+    return not any(ch.isalnum() for ch in text)
+
+
 def _merge_header(words: list[OcrWord], header_gap: float) -> list[tuple[str, float]]:
     columns: list[tuple[str, float, float]] = []  # title, left, right
+    split_next = False
     for word in words:
-        if columns and word.left - columns[-1][2] <= header_gap:
+        if _is_punctuation(word.text):
+            split_next = True
+            continue
+        if columns and not split_next and word.left - columns[-1][2] <= header_gap:
             title, left, _ = columns[-1]
             columns[-1] = (f"{title} {word.text}", left, word.right)
         else:
             columns.append((word.text, word.left, word.right))
+        split_next = False
     return [(title, left) for title, left, _ in columns]
 
 
@@ -68,8 +78,9 @@ def find_column_separators(
     min_contrast: int = 12,
     coverage: float = 0.85,
 ) -> list[float]:
-    """Screen x of the vertical grid lines inside the header band: pixel columns darker than the
-    band's background for (almost) its full height. Text strokes never span the whole band."""
+    """Screen x of the vertical grid lines inside the header band: pixel columns that differ from the
+    band's background for (almost) its full height. Darker OR lighter: a focused list draws a dark
+    header with light grid lines (seen live). Text strokes never span the whole band."""
     gray = image.convert("L")
     width, data = gray.width, gray.tobytes()  # one byte per pixel, row-major
     top, bottom = max(0, int(band_top - rect.top)), min(gray.height, int(band_bottom - rect.top))
@@ -79,7 +90,7 @@ def find_column_separators(
     background = band[len(band) // 2]
     needed = coverage * (bottom - top)
     dark = [
-        sum(1 for y in range(top, bottom) if data[y * width + x] < background - min_contrast) >= needed
+        sum(1 for y in range(top, bottom) if abs(data[y * width + x] - background) > min_contrast) >= needed
         for x in range(width)
     ]
     separators: list[float] = []
@@ -109,6 +120,15 @@ def build_table(
         return OcrTable(columns=())
     header_index = find_header_row(rows, expected_headers, header_gap) if expected_headers else 0
     header, body = rows[header_index], rows[header_index + 1 :]
+    # Grid lines OCR read as ',' or '|' in the header are separators too (they cover lines the
+    # pixel scan can miss on a highlighted header).
+    glyph_lines = [(w.left + w.right) / 2 for w in header if _is_punctuation(w.text)]
+    if separators or glyph_lines:
+        merged: list[float] = []
+        for x in sorted([*separators, *glyph_lines]):
+            if not merged or x - merged[-1] > 6:
+                merged.append(x)
+        separators = merged
 
     if separators:
         bounds = sorted(separators)
@@ -117,8 +137,21 @@ def build_table(
             return bisect.bisect(bounds, (word.left + word.right) / 2)
 
         titles: dict[int, list[OcrWord]] = {}
-        for word in header:
+        for word in (w for w in header if not _is_punctuation(w.text)):
             titles.setdefault(interval(word), []).append(word)
+        # A missed grid line merges two titles ("Description Discount"): split after an expected title.
+        known = {normalize_text(h) for h in expected_headers}
+        extra_lines = []
+        for ws in titles.values():
+            for cut in range(1, len(ws)):
+                if normalize_text(" ".join(w.text for w in ws[:cut])) in known:
+                    extra_lines.append(ws[cut].left - 4)
+                    break
+        if extra_lines:
+            bounds = sorted([*bounds, *extra_lines])
+            titles = {}
+            for word in (w for w in header if not _is_punctuation(w.text)):
+                titles.setdefault(interval(word), []).append(word)
         columns = [
             (" ".join(w.text for w in ws), bounds[i - 1] if i > 0 else min(w.left for w in ws))
             for i, ws in sorted(titles.items())
