@@ -33,10 +33,7 @@ class DebtorEditorScreen:
 
     def open_new_debtor(self) -> None:
         """2.5: the Order tab stays open; New Contact in the left New panel opens 'New Debtor'."""
-        self._ctx.session.bring_to_front()
-        before = self._ctx.tab_snapshot()
-        self._ctx.find("main", "new_contact").click_input()  # navigation entry: no Invoke pattern
-        self._tab = self._ctx.wait_for_new_tab(before)
+        self._tab = self._ctx.open_new_editor("new_contact", "new_contact_toolbar")
 
     def activate(self) -> None:
         self._ctx.activate_editor(self._require_tab())

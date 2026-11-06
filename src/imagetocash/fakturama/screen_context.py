@@ -16,7 +16,7 @@ from imagetocash.automation.locators import Locator, build_locator, largest_leaf
 from imagetocash.automation.ocr_table import OcrTable, OcrTableReader, OcrTableRow
 from imagetocash.automation.screen_ocr import ScreenRect
 from imagetocash.automation.session import DesktopSession
-from imagetocash.automation.waiting import wait_until, wait_until_stable
+from imagetocash.automation.waiting import WaitTimeout, wait_until, wait_until_stable
 from imagetocash.cli.config import Settings
 from imagetocash.domain.matching import normalize_text
 from imagetocash.domain.review import ManualReviewRequired, ReviewReason
@@ -102,16 +102,34 @@ class ScreenContext:
         return {folder: len(items) for folder, items in self._tab_folders().items()}
 
     def wait_for_new_tab(self, before: Mapping[tuple[int, ...], int], title_prefix: str = "") -> EditorTab:
-        def new_tab() -> EditorTab | None:
-            for folder, items in self._tab_folders().items():
-                if folder not in before:  # a brand-new folder is an editor's inner tabs, not an editor
-                    continue
-                for index in range(before[folder], len(items)):
-                    if str(items[index].element_info.name).lstrip("*").startswith(title_prefix):
-                        return EditorTab(folder, index)
-            return None
+        # A brand-new folder is an editor's inner tabs (Addresses, ...), never an editor itself.
+        return wait_until(
+            lambda: self._new_tab(before, title_prefix),
+            timeout=self.settings.timeouts.dialog,
+            what="the new editor tab",
+        )
 
-        return wait_until(new_tab, timeout=self.settings.timeouts.dialog, what="the new editor tab")
+    def open_new_editor(self, panel_key: str, toolbar_key: str) -> EditorTab:
+        """Spec: click the entry in the left New panel. If that only re-focuses an existing editor (no
+        fresh 'New ...' tab within a few seconds), use the equivalent toolbar button."""
+        prefix = str(self.selectors.value("main", "new_editor_title_prefix"))
+        self.session.bring_to_front()
+        before = self.tab_snapshot()
+        self.find("main", panel_key).click_input()  # navigation entry: no Invoke pattern
+        try:
+            return wait_until(lambda: self._new_tab(before, prefix), timeout=4, what="a new editor from the New panel")
+        except WaitTimeout:
+            self.press(self.find("main", toolbar_key))
+            return self.wait_for_new_tab(before, title_prefix=prefix)
+
+    def _new_tab(self, before: Mapping[tuple[int, ...], int], title_prefix: str) -> EditorTab | None:
+        for folder, items in self._tab_folders().items():
+            if folder not in before:
+                continue
+            for index in range(before[folder], len(items)):
+                if str(items[index].element_info.name).lstrip("*").startswith(title_prefix):
+                    return EditorTab(folder, index)
+        return None
 
     def editor_item(self, tab: EditorTab) -> Any:
         items = self._tab_folders().get(tab.folder_id, [])

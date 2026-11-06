@@ -27,10 +27,7 @@ class ProductEditorScreen:
         self._tab: EditorTab | None = None
 
     def open_new_product(self) -> None:
-        self._ctx.session.bring_to_front()
-        before = self._ctx.tab_snapshot()
-        self._ctx.find("main", "new_product").click_input()  # navigation entry: no Invoke pattern
-        self._tab = self._ctx.wait_for_new_tab(before)
+        self._tab = self._ctx.open_new_editor("new_product", "new_product_toolbar")
 
     def vat_options(self) -> list[str]:
         return [o.strip() for o in combo_options(self._field("vat"))]

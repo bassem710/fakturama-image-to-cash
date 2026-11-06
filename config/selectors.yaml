@@ -11,6 +11,11 @@ main:
   save: {by: properties, control_type: Button, name: "Save the current contents"}
   new_contact: {by: properties, control_type: Text, name: "New Contact"}      # New panel (navigation view)
   new_product: {by: properties, control_type: Text, name: "New product"}
+  # Fallbacks: the New panel entry re-focuses an already open "new" editor part instead of opening a
+  # fresh one (seen live); the toolbar buttons always open a fresh editor.
+  new_contact_toolbar: {by: properties, control_type: SplitButton, name: "Create a new contact"}
+  new_product_toolbar: {by: properties, control_type: Button, name: "Create a new product"}
+  new_editor_title_prefix: "New"
 
 data_views:                             # entries of the navigation view's Data group
   documents: "Documents"
