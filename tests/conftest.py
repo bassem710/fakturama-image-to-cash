@@ -21,9 +21,7 @@ def make_northstar_order() -> OrderDocument:
             email="marta.klein@example.test",
             telephone="+49 30 5550 1420",
             billing_address=Address("Northstar Office GmbH", "Friedrichstrasse 88", "10117", "Berlin", "Germany"),
-            delivery_address=Address(
-                "Northstar Office Warehouse", "Beusselstrasse 44", "10553", "Berlin", "Germany"
-            ),
+            delivery_address=Address("Northstar Office Warehouse", "Beusselstrasse 44", "10553", "Berlin", "Germany"),
             source_customer_id="CUST-1007",
         ),
         payment=PaymentInfo(method="Bank Transfer", paid_status="PAID", payment_date=date(2026, 7, 18)),

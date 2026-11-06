@@ -32,11 +32,12 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 markers = ["ui: needs a running Fakturama (deselect with -m 'not ui')"]
 addopts = "-m 'not ui'"
 
 [tool.ruff]
-line-length = 110
+line-length = 120
 target-version = "py312"
 src = ["src", "tests"]
 

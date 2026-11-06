@@ -40,9 +40,7 @@ def find_inconsistencies(order: OrderDocument) -> list[str]:
             problems.append(f"VAT total: rates give {expected_vat}, image says {order.totals.vat}")
 
     if not amounts_match(order.totals.net + order.totals.vat, order.totals.gross):
-        problems.append(
-            f"gross total: {order.totals.net} + {order.totals.vat} != {order.totals.gross} on the image"
-        )
+        problems.append(f"gross total: {order.totals.net} + {order.totals.vat} != {order.totals.gross} on the image")
     if order.payment.is_paid and order.payment.payment_date is None:
         problems.append("paid status is PAID but no payment date was found")
     return problems

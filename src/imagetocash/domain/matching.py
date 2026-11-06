@@ -16,7 +16,7 @@ Outcomes:
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from decimal import Decimal, InvalidOperation
 
 Record = Mapping[str, str]
@@ -26,6 +26,17 @@ Normalizer = Callable[[str], str]
 def normalize_text(value: str | None) -> str:
     """Case-insensitive, whitespace-collapsed comparison form."""
     return " ".join((value or "").split()).casefold()
+
+
+_OCR_CONFUSABLES = str.maketrans({"o": "0", "i": "1", "l": "1", "|": "1", "s": "5", "b": "8"})
+
+
+def normalize_ocr_text(value: str | None) -> str:
+    """Comparison form for text READ BY OCR: folds characters OCR commonly confuses
+    (O/0, I/l/1, S/5, B/8) on BOTH sides, so 'CHR-ERG-OI' (OCR) equals 'CHR-ERG-01' (source).
+    Both values are folded identically, so equality stays symmetric; the price is that two
+    codes differing only in a confusable pair also compare equal, which is documented."""
+    return normalize_text(value).translate(_OCR_CONFUSABLES)
 
 
 def normalize_percent(value: str | None) -> str:
@@ -71,9 +82,14 @@ class RecordMatchPolicy:
     identity_fields: tuple[str, ...]
     checked_fields: tuple[str, ...] = ()
     normalizers: Mapping[str, Normalizer] = field(default_factory=dict)
+    default_normalizer: Normalizer = normalize_text
+
+    def ocr_tolerant(self) -> RecordMatchPolicy:
+        """Same rules, for rows that were read by OCR."""
+        return replace(self, default_normalizer=normalize_ocr_text)
 
     def _normalized(self, record: Record, field_name: str) -> str:
-        normalize = self.normalizers.get(field_name, normalize_text)
+        normalize = self.normalizers.get(field_name, self.default_normalizer)
         return normalize(record.get(field_name, ""))
 
     def _fields_equal(self, wanted: Record, row: Record, field_names: Sequence[str]) -> bool:
