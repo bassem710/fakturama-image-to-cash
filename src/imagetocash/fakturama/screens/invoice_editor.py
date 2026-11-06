@@ -60,6 +60,7 @@ class InvoiceEditorScreen:
         set_cdatetime(  # the 'at' date appears once 'paid' is ticked
             self._field("payment_date"),
             payment_date,
+            enter_from=self._field("payment_method"),  # the date follows the method combo
             parse_format=self._ctx.ui_date_parse_format,
             commit=self._field("paid_value").set_focus,
             spec_step="5.3",

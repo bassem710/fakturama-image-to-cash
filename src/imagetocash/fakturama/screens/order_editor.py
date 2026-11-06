@@ -17,7 +17,6 @@ from imagetocash.automation.input import (
     set_and_verify,
 )
 from imagetocash.automation.locators import largest_leaf_pane
-from imagetocash.automation.screen_ocr import ScreenRect
 from imagetocash.automation.waiting import wait_until
 from imagetocash.domain.models import LineItem
 from imagetocash.domain.review import ManualReviewRequired, ReviewReason
@@ -63,6 +62,7 @@ class OrderEditorScreen:
         set_cdatetime(
             self._field("date"),
             value,
+            enter_from=self._field("number"),  # Tab from No. selects the date's first part (verified)
             parse_format=self._ctx.ui_date_parse_format,
             commit=self._field("customer_reference").set_focus,
             spec_step="1.5",
@@ -105,26 +105,32 @@ class OrderEditorScreen:
 
     # --- 3.13-3.16 Items grid (custom-drawn NatTable -> OCR inside its UIA rectangle) ------------------
     def read_item_lines(self) -> list[dict[str, str]]:
-        return [record for record, _ in self._ctx.read_table_rows(self._items_table(), self._item_columns())]
+        return self._ctx.read_table_rows(
+            self._items_table(), self._item_columns(), self._item_order(), percent_fields=("vat", "discount")
+        )
 
     def fill_item_line(self, line_index: int, item: LineItem) -> None:
-        columns = self._item_columns()
-        title_of = {field: title for title, field in columns.items()}
-        rows = self._ctx.read_table_rows(self._items_table(), columns)
+        """Keyboard only: Ctrl+Home to the first cell, Down to the line, Right to the column (its index
+        in the configured display order, never a pixel position), type the value, Enter."""
+        rows = self.read_item_lines()
         if line_index >= len(rows):
             raise ManualReviewRequired("3.13", ReviewReason.UI_ELEMENT_NOT_FOUND, f"no Items line {line_index + 1}")
-        record, ocr_row = rows[line_index]
+        record = rows[line_index]
         wanted = {
             "quantity": format(item.quantity.normalize(), "f"),
             "unit_price": f"{item.unit_net_price:.2f}",
             "discount": format(item.discount_percent.normalize(), "f"),
         }
+        order = self._item_order()
+        table = self._items_table()
         for field, value in wanted.items():
             if record.get(field) and _same_number(record[field], value):
                 continue  # 3.14: "set or confirm"
-            x = self._column_x(title_of[field])
-            self._ctx.click_point((int(x), ocr_row.click_point[1]), double=True)
-            keyboard.send_keys("^a" + escape_send_keys(value) + "{ENTER}", pause=0.02)
+            table.set_focus()
+            keys = "^{HOME}" + "{DOWN}" * line_index + "{RIGHT}" * order.index(field)
+            keyboard.send_keys(keys, pause=0.02)
+            keyboard.send_keys(escape_send_keys(value) + "{ENTER}", pause=0.03)  # typing opens the cell editor
+            self._ctx.invalidate()
         if not _same_number(record.get("vat", ""), str(item.vat_percent)):
             raise ManualReviewRequired(
                 "3.14",
@@ -183,22 +189,17 @@ class OrderEditorScreen:
                 return table
         raise ManualReviewRequired("3.13", ReviewReason.UI_ELEMENT_NOT_FOUND, "Items table not found")
 
-    def _column_x(self, title: str) -> float:
-        ocr_table = self._ctx.tables.read(
-            ScreenRect.of(self._items_table()), expected_headers=tuple(self._item_columns())
-        )
-        x = ocr_table.column_center_x(title)
-        if x is None:
-            raise ManualReviewRequired("3.13", ReviewReason.UI_ELEMENT_NOT_FOUND, f"Items column {title!r} not found")
-        return x
+    def _item_order(self) -> list[str]:
+        return list(self._ctx.selectors.value(S, "items_order"))
 
     def _open_selector(self, icon_key: str, title_key: str, columns_key: str) -> SelectionDialogScreen:
         self.activate()
-        self._ctx.find(S, icon_key, scope=self._pane()).click_input()  # Image: no Invoke pattern
+        self._ctx.press(self._ctx.find(S, icon_key, scope=self._pane()))  # Image icon: no pattern -> element click
         title = str(self._ctx.selectors.value("selection_dialogs", title_key))
         dialog = self._ctx.session.wait_for_dialog(title, self._ctx.settings.timeouts.dialog)
         columns = dict(self._ctx.selectors.value("selection_dialogs", columns_key))
-        return SelectionDialogScreen(self._ctx, dialog, title, columns)
+        order = list(self._ctx.selectors.value("selection_dialogs", columns_key.replace("_columns", "_order")))
+        return SelectionDialogScreen(self._ctx, dialog, title, columns, order)
 
 
 def _tab_folder_named(pane: Any, name: str) -> Any | None:

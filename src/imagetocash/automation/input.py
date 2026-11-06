@@ -36,7 +36,7 @@ def type_into(element: Any, text: str, commit_key: str = "") -> None:
         element.click_input()
     keyboard.send_keys("^a{DELETE}", pause=0.02)
     if text:
-        keyboard.send_keys(escape_send_keys(text), with_spaces=True, pause=0.01)
+        keyboard.send_keys(escape_send_keys(text), with_spaces=True, pause=0.005)
     if commit_key:
         keyboard.send_keys(commit_key, pause=0.02)
 
@@ -63,8 +63,14 @@ def set_and_verify(
     reader: Callable[[Any], str] = read_value,
     attempts: int = 2,
 ) -> str:
-    """Type `value`, read it back, retry once, then stop for manual review."""
+    """Set `value` and read it back. First the UIA ValuePattern (fast; verified live that Fakturama's
+    model takes it: the editor turns dirty), then keyboard typing; one retry; then manual review."""
     observed = ""
+    with contextlib.suppress(Exception):
+        element.iface_value.SetValue(value)
+        observed = reader(element)
+        if normalize(observed) == normalize(value):
+            return observed
     for _ in range(attempts):
         type_into(element, value)
         observed = reader(element)
@@ -112,12 +118,30 @@ def select_combo_option(combo: Any, option: str, *, spec_step: str, field_name: 
         raise ManualReviewRequired(
             spec_step, ReviewReason.UI_ELEMENT_NOT_FOUND, f"{field_name}: {len(exact)} options named {option!r}"
         )
-    combo.select(exact[0])
+    _select_list_item(combo, exact[0])
     observed = read_value(combo)
+    if normalize_text(observed) != normalize_text(option):  # pattern did not commit: pywinauto select
+        combo.select(exact[0])
+        observed = read_value(combo)
     if normalize_text(observed) != normalize_text(option):
         raise ManualReviewRequired(
             spec_step, ReviewReason.VALUE_MISMATCH, f"{field_name}: wanted {option!r}, shows {observed!r}"
         )
+
+
+def _select_list_item(combo: Any, name: str) -> None:
+    """SelectionItem pattern on the option itself; pywinauto's own select() only as a fallback."""
+    combo.expand()
+    try:
+        item = next((i for i in combo.descendants(control_type="ListItem") if i.element_info.name == name), None)
+        if item is not None:
+            with contextlib.suppress(Exception):
+                item.iface_selection_item.Select()
+                return
+    finally:
+        with contextlib.suppress(Exception):
+            combo.collapse()
+    combo.select(name)
 
 
 def set_checkbox(checkbox: Any, checked: bool, *, spec_step: str, field_name: str) -> None:

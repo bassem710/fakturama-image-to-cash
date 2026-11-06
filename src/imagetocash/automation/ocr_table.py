@@ -2,8 +2,7 @@
 
 Columns come from the header row: header words closer than `header_gap` px are one column title
 ("First Name"). A data word belongs to the column whose left edge is the closest one at or left
-of the word (left-aligned cells). Every row keeps the screen point of its first word, so a row
-can be clicked at a position measured at runtime, never a hardcoded coordinate.
+of the word (left-aligned cells). OCR is a read-only fallback; nothing is ever clicked at a measured position.
 """
 
 from __future__ import annotations
@@ -21,10 +20,9 @@ from imagetocash.domain.matching import normalize_text
 @dataclass(frozen=True)
 class OcrTableRow:
     cells: dict[str, str]
-    click_point: tuple[int, int]
 
     def __hash__(self) -> int:
-        return hash((tuple(sorted(self.cells.items())), self.click_point))
+        return hash(tuple(sorted(self.cells.items())))
 
 
 @dataclass(frozen=True)
@@ -177,7 +175,7 @@ def build_table(
             for word in row:
                 if (column := title_of.get(interval(word))) is not None:
                     cells[column].append(word.text)
-            table_rows.append(OcrTableRow({k: " ".join(v) for k, v in cells.items()}, click_point=row[0].center))
+            table_rows.append(OcrTableRow({k: " ".join(v) for k, v in cells.items()}))
         return OcrTable(columns=tuple(columns), rows=tuple(table_rows))
 
     columns = _merge_header(header, header_gap)
@@ -188,7 +186,7 @@ def build_table(
         for word in row:
             starts = [i for i, left in enumerate(lefts) if left - slack <= word.left]
             cells[columns[starts[-1] if starts else 0][0]].append(word.text)
-        table_rows.append(OcrTableRow({k: " ".join(v) for k, v in cells.items()}, click_point=row[0].center))
+        table_rows.append(OcrTableRow({k: " ".join(v) for k, v in cells.items()}))
     return OcrTable(columns=tuple(columns), rows=tuple(table_rows))
 
 

@@ -5,54 +5,54 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any
 
-from pywinauto import keyboard
-
 from imagetocash.automation.input import read_value, select_combo_option, set_and_verify
 from imagetocash.automation.locators import locate
-from imagetocash.automation.ocr_table import OcrTableRow
-from imagetocash.automation.waiting import WaitTimeout, wait_until
+from imagetocash.automation.run_log import get_logger
+from imagetocash.automation.waiting import wait_until
 from imagetocash.domain.matching import normalize_ocr_text
 from imagetocash.domain.review import ManualReviewRequired, ReviewReason
 from imagetocash.fakturama.screen_context import EditorTab, ScreenContext
 
 
 class MasterDataListScreen:
-    """A Data view: search box (UIA, label 'Search:'), custom-drawn list (OCR), green + (UIA toolbar)."""
+    """A Data view: search box (UIA Value, read back), custom-drawn list (clipboard copy, OCR as
+    fallback), green + (the view toolbar's 'Create...' button, Invoke)."""
 
-    def __init__(self, ctx: ScreenContext, view_key: str, columns_key: str) -> None:
+    def __init__(
+        self, ctx: ScreenContext, view_key: str, columns_key: str, percent_fields: tuple[str, ...] = ()
+    ) -> None:
         self._ctx, self._view_key, self._columns_key = ctx, view_key, columns_key
+        self._percent_fields = percent_fields
         self._title = ""
 
     def open(self) -> None:
         self._title = self._ctx.open_data_view(self._view_key)
 
     def search(self, text: str) -> list[dict[str, str]]:
-        return [record for record, _ in self._search_rows(text)]
-
-    def _search_rows(self, text: str) -> list[tuple[dict[str, str], OcrTableRow]]:
         pane = self._view()
         box = locate(pane, self._ctx.selectors.locator("lists", "search"))
         set_and_verify(box, text, spec_step="-", field_name="list search")  # typed text must land
         columns = dict(self._ctx.selectors.value("lists", self._columns_key))
+        order = list(self._ctx.selectors.value("lists", self._columns_key.replace("_columns", "_order")))
         table = self._ctx.table_in(pane)
         wanted = normalize_ocr_text(text)
 
-        def filtered() -> list[tuple[dict[str, str], OcrTableRow]] | None:
+        def filtered() -> list[dict[str, str]] | None:
             """The list re-filters asynchronously (seen live): accept a read only once every row
-            contains the search text, so a stale, unfiltered frame is never taken as the answer."""
-            rows = self._ctx.read_table_rows(table, columns)
-            ok = all(wanted in normalize_ocr_text(" ".join(record.values())) for record, _ in rows)
+            contains the search text, so a stale, unfiltered list is never taken as the answer."""
+            rows = self._ctx.read_table_rows(table, columns, order, self._percent_fields)
+            ok = all(wanted in normalize_ocr_text(" ".join(record.values())) for record in rows)
             return rows if ok else None
 
         return wait_until(
             filtered,
             done=lambda rows: rows is not None,
             timeout=self._ctx.settings.timeouts.list_stable,
-            what=f"the list filtered by {text!r}",
+            what="the filtered list",
         )
 
     def create_new(self) -> None:
-        """The green + at the upper right of the list: the view's own 'Create…' toolbar button."""
+        """The green + at the upper right of the list: the view's own 'Create...' toolbar button."""
         tab = next(t for t in self._ctx.main().descendants(control_type="Tab") if t.element_info.name == self._title)
         before = self._ctx.tab_snapshot()
         self._ctx.press(locate(tab, self._ctx.selectors.locator("lists", "create_new")))
@@ -66,39 +66,23 @@ class MasterDataListScreen:
 
 
 class VatListScreen(MasterDataListScreen):
-    """Data > VATs. The list has no 'VAT code' column, so spec 3.5's code check opens each row whose
-    name matches (double-click at its OCR-measured point), reads 'VAT code (E-Invoice)' and closes
-    the unchanged editor again (Ctrl+W)."""
+    """Data > VATs. The list shows Name, Description and Value but not the VAT code, and Fakturama
+    opens a row only by double-clicking it (no keyboard or pattern route; verified live). By your
+    decision the code of a PRE-EXISTING rate is therefore not opened: rows carry code 'S' and the
+    gap is logged. Rates the script creates always get code S (3.6)."""
 
     def __init__(self, ctx: ScreenContext) -> None:
-        super().__init__(ctx, "vats", "vat_columns")
+        super().__init__(ctx, "vats", "vat_columns", percent_fields=("value",))
 
     def search(self, text: str) -> list[dict[str, str]]:
-        rows = []
-        for record, ocr_row in self._search_rows(text):
+        rows = super().search(text)
+        for record in rows:
             if normalize_ocr_text(record.get("name", "")) == normalize_ocr_text(text):
-                record["code"] = self._read_code(ocr_row, text)
-            rows.append(record)
+                record["code"] = "S"
+                get_logger().info(
+                    "3.5     VAT code of the existing rate not opened (no UIA route); Name and Value matched"
+                )
         return rows
-
-    def _read_code(self, ocr_row: OcrTableRow, name: str) -> str:
-        """Double-click the row to open its editor. If that editor is already open, Fakturama only
-        re-focuses it (no new tab), so fall back to the open editor whose title is the VAT's name."""
-        before = self._ctx.tab_snapshot()
-        self._ctx.click_point(ocr_row.click_point, double=True)
-        try:
-            editor = wait_until(lambda: self._ctx._new_tab(before, ""), timeout=4, what="the VAT editor")
-            opened_here = True
-        except WaitTimeout:
-            editor = self._ctx.editor_titled(name)
-            opened_here = False
-        try:
-            return read_value(self._ctx.find("vat_editor", "code", scope=self._ctx.editor_pane(editor)))
-        finally:
-            self._ctx.activate_editor(editor)
-            if opened_here and not self._ctx.is_dirty(editor):  # never close an editor with changes
-                keyboard.send_keys("^w")
-            self._ctx.activate_tab(self._title)
 
 
 class _SmallEditor:

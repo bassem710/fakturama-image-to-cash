@@ -9,7 +9,6 @@ Two interchangeable implementations of the same protocol (Liskov):
 from __future__ import annotations
 
 import mimetypes
-import sys
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Protocol
@@ -18,6 +17,7 @@ import httpx
 from google import genai
 from google.genai import errors, types
 
+from imagetocash.automation.run_log import get_logger
 from imagetocash.domain.review import ManualReviewRequired, ReviewReason
 from imagetocash.extraction.schema import ExtractedOrder
 
@@ -65,7 +65,7 @@ class GeminiVisionOrderExtractor:
         still overloaded after that hands over to the next one."""
         last_error: Exception | None = None
         for model in self._models:
-            print(f"[1.1] reading the image with {model} ...", file=sys.stderr, flush=True)
+            get_logger().info(f"1.1     reading the image with {model}")
             try:
                 return self._extract_with(model, image_path)
             except errors.APIError as error:
@@ -74,7 +74,7 @@ class GeminiVisionOrderExtractor:
                 last_error = error
             except httpx.TransportError as error:  # dropped connection / timeout
                 last_error = error
-            print(f"[1.1] {model} unavailable: {str(last_error)[:120]}", file=sys.stderr, flush=True)
+            get_logger().warning(f"1.1     {model} unavailable ({type(last_error).__name__}), trying the next model")
         raise ManualReviewRequired(
             "1.1", ReviewReason.EXTRACTION_INVALID, f"every Gemini model unavailable ({last_error})"
         )

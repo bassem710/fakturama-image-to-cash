@@ -29,7 +29,13 @@ class DocumentsListScreen:
         return rows
 
     def _iso_date(self, text: str) -> str:
-        try:
-            return datetime.strptime(text.strip(), self._date_format).date().isoformat()
-        except ValueError:
-            return text
+        """UI format (OCR fallback) or the raw clipboard value (ISO date/time, or Java's Date text)."""
+        value = text.strip()
+        for fmt in (self._date_format, "%Y-%m-%d", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%a %b %d %H:%M:%S %Z %Y"):
+            try:
+                return (
+                    datetime.strptime(value if "%H" in fmt or len(value) <= 12 else value[:10], fmt).date().isoformat()
+                )
+            except ValueError:
+                continue
+        return value

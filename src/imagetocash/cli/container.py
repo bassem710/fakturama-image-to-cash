@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 
 from imagetocash.automation.evidence import EvidenceRecorder
+from imagetocash.automation.run_log import setup_run_logging
 from imagetocash.cli.config import Settings
 from imagetocash.extraction.extractors import (
     GeminiVisionOrderExtractor,
@@ -38,13 +39,15 @@ def new_run_dir(settings: Settings) -> Path:
 
 
 def screenshot_main_window(path: Path) -> None:
+    """Screen capture as compressed PNG (local runs/ only; contains order data, git-ignored)."""
     from PIL import ImageGrab
 
-    ImageGrab.grab(all_screens=True).save(path)
+    ImageGrab.grab(all_screens=True).save(path, optimize=False, compress_level=1)
 
 
 def build_runner(settings: Settings, from_json: Path | None, model: str | None) -> tuple[ImageToCashRunner, Path]:
     run_dir = new_run_dir(settings)
+    setup_run_logging(run_dir)
     evidence = EvidenceRecorder(run_dir, screenshotter=screenshot_main_window)
 
     def connect_ui() -> FakturamaUi:

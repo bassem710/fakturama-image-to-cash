@@ -9,6 +9,7 @@
 main:
   new_order: {by: properties, control_type: Button, name: "Create: New Order"}
   save: {by: properties, control_type: Button, name: "Save the current contents"}
+  data_menu: {by: properties, control_type: MenuItem, name: "Data"}   # Expand, then Invoke the view item
   new_contact: {by: properties, control_type: Text, name: "New Contact"}      # New panel (navigation view)
   new_product: {by: properties, control_type: Text, name: "New product"}
   # Fallbacks: the New panel entry re-focuses an already open "new" editor part instead of opening a
@@ -40,6 +41,7 @@ order_editor:
   total: {by: properties, control_type: Edit, name: "Total"}
   follow_up_invoice: {by: properties, control_type: Button, name: "Invoice"}
   address_tabs: {invoice: "Invoice address", delivery: "Delivery address"}
+  items_order: [position, quantity, sku, picture, name, description, vat, unit_price, discount, price]
   items_columns:                        # OCR header text -> field (not yet seen with data)
     "Item No.": sku
     "Qty.": quantity
@@ -54,13 +56,19 @@ selection_dialogs:                      # top-level #32770 windows
   search: {by: label, label: "Search:", target: Edit}
   ok: {by: properties, control_type: Button, name: "OK"}
   cancel: {by: properties, control_type: Button, name: "Cancel"}
+  # Clipboard copy (Ctrl+A/Ctrl+C) gives raw values in display order, no header: one field per column.
+  address_order: [number, first_name, last_name, company, zip, city]
+  product_order: [sku, name, description, stock, price, vat]
   address_columns: {"No.": number, "First Name": first_name, "Name": last_name, "Company": company, "ZIP": zip, "City": city}
   product_columns: {"Item No.": sku, "Name": name, "Description": description, "Price": price, "VAT": vat}
 
 lists:
   search: {by: label, label: "Search:", target: Edit}
   create_new: {by: properties, control_type: Button, name_prefix: "Create"}   # "Create a new tax rate", ...
-  vat_columns: {"Name": name, "Description": description, "Value": value}    # no VAT code column: read in editor
+  vat_order: [standard, name, description, value]          # value is a fraction (0.19)
+  payment_order: [standard, name, description, discount, discount_days, net_days]
+  documents_order: [type, number, date, customer, reference, state, total, printed]
+  vat_columns: {"Name": name, "Description": description, "Value": value}    # no VAT code column (see VatListScreen)
   payment_columns: {"Name": name, "Description": description}
   documents_columns: {"Document": number, "Date": date, "Name": customer, "Cust.Ref.": reference, "State": state, "Total": total}
   document_type_by_prefix: {"PO": order, "IN": invoice}

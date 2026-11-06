@@ -1,0 +1,57 @@
+import logging
+from pathlib import Path
+
+import pytest
+
+from imagetocash.automation.evidence import EvidenceRecorder
+from imagetocash.automation.run_log import mask, redact, setup_run_logging
+from imagetocash.domain.review import ManualReviewRequired, ReviewReason
+
+SECRETS = [
+    "Northstar Office GmbH",
+    "Friedrichstrasse 88",
+    "10117",
+    "marta.klein@example.test",
+    "+49 30 5550 1420",
+    "WEB-2026-0714-A17",
+    "678.30",
+]
+
+
+def test_mask_shows_shape_not_value() -> None:
+    assert mask("Northstar Office GmbH") == "N***H (21 chars)"
+    assert mask("abc") == "*** (3 chars)"
+    assert mask("") == "<empty>"
+
+
+def test_redact_removes_every_sensitive_value() -> None:
+    message = (
+        "Invoice address on screen 'Northstar Office GmbH\\nFriedrichstrasse 88\\n10117 Berlin' lacks zip; "
+        "mail marta.klein@example.test phone +49 30 5550 1420 ref WEB-2026-0714-A17 total 678.30"
+    )
+    cleaned = redact(message)
+    for secret in SECRETS:
+        assert secret not in cleaned
+
+
+def test_step_logs_and_files_are_redacted(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    logger = setup_run_logging(tmp_path)
+    logger.propagate = True  # let caplog see it
+    evidence = EvidenceRecorder(tmp_path)
+    with evidence.spec_step("1.6", "Enter External Reference", expected="WEB-2026-0714-A17") as rec:
+        rec.observed = "WEB-2026-0714-A17"
+    with pytest.raises(ManualReviewRequired), evidence.spec_step("2.4", "Check addresses"):
+        raise ManualReviewRequired(
+            "2.4", ReviewReason.VALUE_MISMATCH, "'Northstar Office GmbH' lacks 'Friedrichstrasse 88'"
+        )
+    evidence.write_report("MANUAL REVIEW at 2.4")
+    logging.getLogger("imagetocash").handlers.clear()
+
+    texts = [caplog.text] + [
+        p.read_text(encoding="utf-8") for p in tmp_path.glob("*") if p.suffix in {".md", ".jsonl", ".log"}
+    ]
+    for text in texts:
+        for secret in SECRETS:
+            assert secret not in text
+    assert "1.6" in caplog.text and "OK" in caplog.text
+    assert "manual review" in caplog.text

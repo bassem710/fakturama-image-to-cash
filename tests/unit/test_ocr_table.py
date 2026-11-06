@@ -32,7 +32,6 @@ def test_header_words_merge_into_columns_and_cells_follow_left_edges() -> None:
         "ZIP": "10117",
         "City": "Berlin",
     }
-    assert table.rows[0].click_point == (132, 47)
 
 
 def test_ocr_confusables_still_match_the_source_sku() -> None:

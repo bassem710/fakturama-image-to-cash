@@ -1,10 +1,12 @@
-"""Entering a date into a Nebula CDateTime field (Fakturama's date widgets).
+"""Entering a date into a Nebula CDateTime field (Fakturama's date widgets), by keyboard only.
 
-Found live: the widget ignores UIA SetValue (it reverts on focus loss), but it accepts typed digits
-part by part and moves to the next part by itself once one is complete (2 digits for month/day,
-4 for the year). So the date is ENTERED: put the caret at the start of the field (a click at the
-left edge of the field's own UIA rectangle selects its first part), type all digits in the
-display order, and move focus away to commit.
+Found live:
+- UIA SetValue only changes the text; the widget reverts on focus loss.
+- Entering the field by Tab from the control before it selects its FIRST part (the month in en_US).
+- Typed digits fill the selected part and move on by themselves when it is complete
+  (2 digits for month/day, 4 for the year).
+So: focus the preceding control, Tab in, confirm through UIA that the date field now has the
+keyboard focus (never type blind), type the digits in display order, Tab out, verify.
 """
 
 from __future__ import annotations
@@ -16,13 +18,16 @@ from datetime import date, datetime
 from typing import Any
 
 from pywinauto import keyboard
+from pywinauto.uia_defines import IUIA
 
 from imagetocash.automation.input import read_value
+from imagetocash.automation.waiting import WaitTimeout, wait_until
 from imagetocash.domain.review import ManualReviewRequired, ReviewReason
 
 _MONTHS = ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
 _LENIENT = re.compile(r"([A-Za-z]{3})\w*\s+(\d{1,2}),\s*(\d{1,4})")
 _PART_CODES = {"month": ("%b", "%B", "%m"), "day": ("%d", "%e"), "year": ("%Y", "%y")}
+KEY_PAUSE = 0.1  # measured: faster bursts lose digits in CDateTime
 
 
 def _parse(text: str, fmt: str) -> date | None:
@@ -49,10 +54,19 @@ def typed_digits(target: date, display_format: str) -> str:
     return "".join(digits[part] for part in sorted(positions, key=positions.__getitem__))
 
 
+def has_keyboard_focus(element: Any) -> bool:
+    try:
+        focused = IUIA().iuia.GetFocusedElement()
+        return bool(IUIA().iuia.CompareElements(focused, element.element_info.element))
+    except Exception:
+        return False
+
+
 def set_cdatetime(
     element: Any,
     target: date,
     *,
+    enter_from: Any,
     parse_format: str,
     commit: Callable[[], None],
     spec_step: str,
@@ -63,11 +77,17 @@ def set_cdatetime(
     # Twice at most: a day the previous year did not have (Feb 29) is accepted on the second pass,
     # once the year is already right.
     for _ in range(2):
-        height = element.rectangle().height()
-        element.click_input(coords=(3, height // 2))  # left edge of the field's UIA rectangle: first part
-        keyboard.send_keys(text, pause=0.03)
+        enter_from.set_focus()
+        keyboard.send_keys("{TAB}")
+        try:
+            wait_until(lambda: has_keyboard_focus(element), timeout=2, what=f"{field_name} to receive focus")
+        except WaitTimeout as error:
+            raise ManualReviewRequired(
+                spec_step, ReviewReason.UI_ELEMENT_NOT_FOUND, f"{field_name}: Tab did not reach the date field"
+            ) from error
+        keyboard.send_keys(text, pause=KEY_PAUSE)
         commit()  # move focus away so the widget commits its value
-        time.sleep(0.2)
+        time.sleep(0.1)
         shown = read_value(element)
         if _parse(shown, parse_format) == target:
             return

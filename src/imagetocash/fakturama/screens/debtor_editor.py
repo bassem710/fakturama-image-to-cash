@@ -108,6 +108,7 @@ class DebtorEditorScreen:
             what=f"Debtor tab '{title}'",
         )
         select_tab_item(item)
+        self._ctx.invalidate()
         return wait_until(
             lambda: next(
                 (f for f in self._pane().descendants(control_type="Tab") if f.element_info.name == title), None
@@ -149,9 +150,13 @@ class DebtorEditorScreen:
 
         to_flip = [key for key, on in wanted.items() if role_shown(key) != on]
         if to_flip:
-            button.click_input()
+            self._ctx.press(button)  # Invoke
             for key in to_flip:
-                self._ctx.find(S, key, scope=self._ctx.main()).click_input()  # real click on the checkbox
+                checkbox = self._ctx.find(S, key, scope=self._ctx.main())
+                try:
+                    checkbox.iface_toggle.Toggle()  # pattern; its state reads stale, so verify via the field
+                except Exception:
+                    checkbox.click_input()  # element click fallback
             keyboard.send_keys("{ESC}")  # close the role popup
         try:
             wait_until(

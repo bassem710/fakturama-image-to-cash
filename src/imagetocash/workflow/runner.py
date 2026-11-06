@@ -7,6 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from enum import IntEnum
 from pathlib import Path
+from typing import Protocol
 
 from imagetocash.automation.evidence import EvidenceRecorder
 from imagetocash.domain.models import OrderDocument
@@ -21,6 +22,10 @@ from imagetocash.workflow.stage2_debtor import DebtorStage
 from imagetocash.workflow.stage3_products import ProductsStage
 from imagetocash.workflow.stage4_save_order import SaveOrderStage
 from imagetocash.workflow.stage5_invoice import InvoiceStage
+
+
+class Stage(Protocol):
+    def run(self, ctx: RunContext) -> None: ...
 
 
 class ExitCode(IntEnum):
@@ -72,8 +77,16 @@ class ImageToCashRunner:
             order = self._extract_and_validate(image_path)
             ui = self._connect_ui()
             ctx = RunContext(order=order, evidence=self._evidence)
-            for stage in (OpenOrderStage(ui), DebtorStage(ui), ProductsStage(ui), SaveOrderStage(ui), InvoiceStage(ui)):
+            stages: tuple[Stage, ...] = (
+                OpenOrderStage(ui),
+                DebtorStage(ui),
+                ProductsStage(ui),
+                SaveOrderStage(ui),
+                InvoiceStage(ui),
+            )
+            for number, stage in enumerate(stages, start=1):
                 stage.run(ctx)
+                self._evidence.stage_done(str(number))
         except ManualReviewRequired as stop:
             report = self._evidence.write_report(f"MANUAL REVIEW at {stop.spec_step}")
             return RunOutcome(ExitCode.MANUAL_REVIEW, report, str(stop))

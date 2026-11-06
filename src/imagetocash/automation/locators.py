@@ -40,6 +40,27 @@ def _matches(
     )
 
 
+class CachedScope:
+    """ScreenIndex: one walk of a scope's subtree, reused by every locator that searches it.
+    Behaves like the scope element for locators (descendants / children / element_info)."""
+
+    def __init__(self, scope: Any) -> None:
+        self._scope = scope
+        self._all = list(scope.descendants())
+        self.element_info = scope.element_info
+
+    def descendants(self, control_type: str | None = None) -> list[Any]:
+        if control_type is None:
+            return list(self._all)
+        return [e for e in self._all if e.element_info.control_type == control_type]
+
+    def children(self) -> list[Any]:
+        return list(self._scope.children())
+
+    def rectangle(self) -> Any:
+        return self._scope.rectangle()
+
+
 @dataclass(frozen=True)
 class ByProperties:
     control_type: str | None = None
