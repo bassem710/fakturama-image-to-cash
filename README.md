@@ -5,6 +5,49 @@ app, following the take-home spec step by step (1.1 → 5.7). It uses **Microsof
 the app, **Gemini vision (Google AI Studio)** to read the image, and **Windows OCR** only as a fallback
 inside UI Automation rectangles. No hardcoded coordinates: every target comes from UIA at run time.
 
+## Setup
+
+1. Windows 10/11, Python 3.12, Fakturama **2.2.0** (`C:\Program Files\Fakturama2`).
+2. Start Fakturama once and finish its first-run setup (workspace `C:\fakturama`, English UI). The app's
+   en_US formats (`Nov 6, 2026`, `$0.00`) are configured in `config/settings.yaml`.
+3. Get the code and install it:
+   ```bash
+   git clone https://github.com/bassem710/fakturama-image-to-cash.git
+   cd fakturama-image-to-cash
+   python -m venv .venv
+   .venv\Scripts\python -m pip install -e ".[dev]"
+   .venv\Scripts\activate
+   ```
+4. Copy `.env.example` to `.env` and set `GEMINI_API_KEY` (Google AI Studio). The model is
+   `extraction.model` in `config/settings.yaml` (default `gemini-flash-lite-latest`; on an overload the
+   next model in `fallback_models` is tried after one retry). Without a key, `--from-json` (below)
+   replays a saved extraction.
+
+## Run
+
+```bash
+imagetocash run samples/order-page3.png             # the full flow 1.1 -> 5.7
+imagetocash extract samples/order-page3.png         # spec 1.1-1.2 only, values masked
+imagetocash run samples/order-page3.png --from-json tests/fixtures/northstar_extracted.json   # replay, no LLM call
+imagetocash inspect --out runs/ui-tree.txt          # dump Fakturama's UIA tree for control mapping
+imagetocash reset-workspace --yes                   # test runs: restore the clean database (moves, never deletes)
+```
+
+**Exit codes:** `0` Order + Invoice saved and verified, or already processed · `2` stopped for manual
+review (spec step + reason) · `1` unexpected error.
+
+**Every run leaves evidence and a report, whether it passes, stops for manual review or fails with an
+error.** It writes `runs/<timestamp>/` (git-ignored, contains order data):
+- `report.md`: one row per spec step (expected, observed, result, seconds) and the outcome: DONE,
+  ALREADY PROCESSED, MANUAL REVIEW at step X, or ERROR;
+- `steps.jsonl`: the same records as JSON lines, appended as each step finishes;
+- `run.log`: the full log, one JSON line per message, values masked;
+- `stage_N.png` after each completed stage, and `NN_<step>_failed.png` at the step that stopped or failed;
+- `extracted.json`: the extraction (once step 1.1 has read the image), replayable with `--from-json`.
+
+The console shows one line per step, with values masked as `N***H (21 chars)`. An annotated example of
+a passing run is in [docs/evidence/](docs/evidence/README.md).
+
 ## Status
 
 | Part | State |
@@ -21,8 +64,8 @@ inside UI Automation rectangles. No hardcoded coordinates: every target comes fr
 |---|---|
 | Part 1 design doc (1–4 pages, no code) | [docs/design-doc.md](docs/design-doc.md) |
 | Source code with a clear structure in a Git repo | `src/imagetocash/` (layers below), tests in `tests/` |
-| Setup instructions: dependencies and how to run against Fakturama | [Setup](#setup) and [Run](#run) below |
-| Annotated screenshots | [docs/evidence/](docs/evidence/README.md): a full live run, spec steps marked |
+| Setup instructions: dependencies and how to run against Fakturama | [Setup](#setup) and [Run](#run) above |
+| Annotated screenshots | [docs/evidence/](docs/evidence/README.md): a full live run, spec steps marked; every run also writes its own report and screenshots, pass or fail ([Run](#run)) |
 | README, with what was skipped | this file, [Not done / next steps](#not-done--next-steps) |
 | Written question (3 more hours) | [Written question](#written-question) |
 
@@ -31,42 +74,6 @@ the payment method (2.10.1–2.10.6) is created just *before* New Contact, becau
 method created while a Debtor editor is open (control map gotcha 15); choosing a row in the two
 selection dialogs is a double-click measured inside the list element, the one pointer action
 (gotcha 7).
-
-## Setup
-
-1. Windows 10/11, Python 3.12, Fakturama **2.2.0** (`C:\Program Files\Fakturama2`).
-2. Start Fakturama once and finish its first-run setup (workspace `C:\fakturama`, English UI). The app's
-   en_US formats (`Nov 6, 2026`, `$0.00`) are configured in `config/settings.yaml`.
-3. Install:
-   ```bash
-   python -m venv .venv
-   .venv\Scripts\python -m pip install -e ".[dev]"
-   ```
-4. Copy `.env.example` to `.env` and set `GEMINI_API_KEY` (Google AI Studio). The model is
-   `extraction.model` in `config/settings.yaml` (default `gemini-flash-lite-latest`; on an overload the
-   next model in `fallback_models` is tried after one retry).
-
-## Run
-
-```bash
-imagetocash run samples/order-page3.png             # the full flow 1.1 -> 5.7
-imagetocash extract samples/order-page3.png         # spec 1.1-1.2 only, values masked
-imagetocash run samples/order-page3.png --from-json runs/<ts>/extracted.json   # replay, no LLM call
-imagetocash inspect --out runs/ui-tree.txt          # dump Fakturama's UIA tree for control mapping
-imagetocash reset-workspace --yes                   # test runs: restore the clean database (moves, never deletes)
-```
-
-**Exit codes:** `0` Order + Invoice saved and verified, or already processed · `2` stopped for manual
-review (spec step + reason) · `1` unexpected error.
-
-**Each run writes `runs/<timestamp>/`** (git-ignored, contains order data):
-- `run.log`: one JSON line per step, values masked;
-- `steps.jsonl`: expected / observed / result / seconds per spec step;
-- `stage_N.png` after each stage and `NN_<step>_failed.png` on a stop;
-- `report.md`;
-- `extracted.json`.
-
-The console shows one line per step, with values masked as `N***H (21 chars)`.
 
 **Re-runs never book an order twice.** Before step 1.3 creates anything, step 1.2.1 searches Data >
 Documents for the image's External Reference. This is a read-only addition to the spec:
