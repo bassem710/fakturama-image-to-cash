@@ -10,6 +10,7 @@ from pywinauto import keyboard
 from imagetocash.automation.input import read_value, select_combo_option, set_and_verify, type_into
 from imagetocash.automation.locators import locate
 from imagetocash.automation.ocr_table import OcrTableRow
+from imagetocash.automation.waiting import WaitTimeout, wait_until
 from imagetocash.domain.matching import normalize_ocr_text
 from imagetocash.domain.review import ManualReviewRequired, ReviewReason
 from imagetocash.fakturama.screen_context import EditorTab, ScreenContext
@@ -60,19 +61,26 @@ class VatListScreen(MasterDataListScreen):
         rows = []
         for record, ocr_row in self._search_rows(text):
             if normalize_ocr_text(record.get("name", "")) == normalize_ocr_text(text):
-                record["code"] = self._read_code(ocr_row)
+                record["code"] = self._read_code(ocr_row, text)
             rows.append(record)
         return rows
 
-    def _read_code(self, ocr_row: OcrTableRow) -> str:
+    def _read_code(self, ocr_row: OcrTableRow, name: str) -> str:
+        """Double-click the row to open its editor. If that editor is already open, Fakturama only
+        re-focuses it (no new tab), so fall back to the open editor whose title is the VAT's name."""
         before = self._ctx.tab_snapshot()
         self._ctx.click_point(ocr_row.click_point, double=True)
-        editor = self._ctx.wait_for_new_tab(before)
+        try:
+            editor = wait_until(lambda: self._ctx._new_tab(before, ""), timeout=4, what="the VAT editor")
+            opened_here = True
+        except WaitTimeout:
+            editor = self._ctx.editor_titled(name)
+            opened_here = False
         try:
             return read_value(self._ctx.find("vat_editor", "code", scope=self._ctx.editor_pane(editor)))
         finally:
             self._ctx.activate_editor(editor)
-            if not self._ctx.is_dirty(editor):  # never close an editor with changes (no save prompt)
+            if opened_here and not self._ctx.is_dirty(editor):  # never close an editor with changes
                 keyboard.send_keys("^w")
             self._ctx.activate_tab(self._title)
 

@@ -18,7 +18,7 @@ from imagetocash.automation.screen_ocr import ScreenRect
 from imagetocash.automation.session import DesktopSession
 from imagetocash.automation.waiting import WaitTimeout, wait_until, wait_until_stable
 from imagetocash.cli.config import Settings
-from imagetocash.domain.matching import normalize_text
+from imagetocash.domain.matching import normalize_ocr_text, normalize_text
 from imagetocash.domain.review import ManualReviewRequired, ReviewReason
 
 
@@ -130,6 +130,14 @@ class ScreenContext:
                 if str(items[index].element_info.name).lstrip("*").startswith(title_prefix):
                     return EditorTab(folder, index)
         return None
+
+    def editor_titled(self, title: str) -> EditorTab:
+        """An already open editor (e.g. re-focused by a double-click on its list row), by title."""
+        for folder, items in self._tab_folders().items():
+            for index, item in enumerate(items):
+                if normalize_ocr_text(str(item.element_info.name).lstrip("*")) == normalize_ocr_text(title):
+                    return EditorTab(folder, index)
+        raise ManualReviewRequired("-", ReviewReason.UI_ELEMENT_NOT_FOUND, f"no editor titled {title!r}")
 
     def editor_item(self, tab: EditorTab) -> Any:
         items = self._tab_folders().get(tab.folder_id, [])

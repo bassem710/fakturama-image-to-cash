@@ -40,6 +40,11 @@ class OcrTable:
         return None
 
 
+def _is_grid_glyph(text: str) -> bool:
+    """Header tokens that are OCR'd grid lines: punctuation or a single stroke letter."""
+    return _is_punctuation(text) or text in {"I", "l", "|", "!"}
+
+
 def _is_punctuation(text: str) -> bool:
     """OCR reads header grid lines as stray ',', '|', '.' tokens: they are column boundaries, not titles."""
     return not any(ch.isalnum() for ch in text)
@@ -120,15 +125,37 @@ def build_table(
         return OcrTable(columns=())
     header_index = find_header_row(rows, expected_headers, header_gap) if expected_headers else 0
     header, body = rows[header_index], rows[header_index + 1 :]
-    # Grid lines OCR read as ',' or '|' in the header are separators too (they cover lines the
-    # pixel scan can miss on a highlighted header).
-    glyph_lines = [(w.left + w.right) / 2 for w in header if _is_punctuation(w.text)]
-    if separators or glyph_lines:
-        merged: list[float] = []
-        for x in sorted([*separators, *glyph_lines]):
-            if not merged or x - merged[-1] > 6:
-                merged.append(x)
-        separators = merged
+    # Grid lines OCR read as ',' / '|' / 'I' in the header are separators too, and a "separator"
+    # inside a header word is a text stroke, not a grid line (seen on focused, dark headers).
+    glyphs = [w for w in header if _is_grid_glyph(w.text)]
+    titles_words = [w for w in header if not _is_grid_glyph(w.text)]
+    candidates = [*separators, *((w.left + w.right) / 2 for w in glyphs)]
+    candidates = [x for x in candidates if not any(w.left + 2 < x < w.right - 2 for w in titles_words)]
+    # With real grid lines found, also split around every expected title (a missed line merges two
+    # titles), unless the cut would go through a longer expected title ("First Name" stays whole).
+    if candidates:
+        known = {normalize_text(h) for h in expected_headers}
+        texts = [w.text for w in titles_words]
+        spans = [
+            (i, j)
+            for i in range(len(texts))
+            for j in range(i + 1, len(texts) + 1)
+            if normalize_text(" ".join(texts[i:j])) in known
+        ]
+        inside = {k for i, j in spans if j - i > 1 for k in range(i + 1, j)}
+        lines = sorted(candidates)
+        for i, j in spans:
+            for cut in (i, j):
+                if not 0 < cut < len(texts) or cut in inside:
+                    continue
+                before, after = titles_words[cut - 1], titles_words[cut]
+                if bisect.bisect(lines, before.right) == bisect.bisect(lines, after.left):  # same interval
+                    candidates.append((before.right + after.left) / 2)
+    merged: list[float] = []
+    for x in sorted(candidates):
+        if not merged or x - merged[-1] > 6:
+            merged.append(x)
+    separators = merged
 
     if separators:
         bounds = sorted(separators)
@@ -137,21 +164,8 @@ def build_table(
             return bisect.bisect(bounds, (word.left + word.right) / 2)
 
         titles: dict[int, list[OcrWord]] = {}
-        for word in (w for w in header if not _is_punctuation(w.text)):
+        for word in titles_words:
             titles.setdefault(interval(word), []).append(word)
-        # A missed grid line merges two titles ("Description Discount"): split after an expected title.
-        known = {normalize_text(h) for h in expected_headers}
-        extra_lines = []
-        for ws in titles.values():
-            for cut in range(1, len(ws)):
-                if normalize_text(" ".join(w.text for w in ws[:cut])) in known:
-                    extra_lines.append(ws[cut].left - 4)
-                    break
-        if extra_lines:
-            bounds = sorted([*bounds, *extra_lines])
-            titles = {}
-            for word in (w for w in header if not _is_punctuation(w.text)):
-                titles.setdefault(interval(word), []).append(word)
         columns = [
             (" ".join(w.text for w in ws), bounds[i - 1] if i > 0 else min(w.left for w in ws))
             for i, ws in sorted(titles.items())
@@ -172,10 +186,44 @@ def build_table(
     for row in body:
         cells = {title: [] for title, _ in columns}
         for word in row:
-            candidates = [i for i, left in enumerate(lefts) if left - slack <= word.left]
-            cells[columns[candidates[-1] if candidates else 0][0]].append(word.text)
+            starts = [i for i, left in enumerate(lefts) if left - slack <= word.left]
+            cells[columns[starts[-1] if starts else 0][0]].append(word.text)
         table_rows.append(OcrTableRow({k: " ".join(v) for k, v in cells.items()}, click_point=row[0].center))
     return OcrTable(columns=tuple(columns), rows=tuple(table_rows))
+
+
+def selection_bands(image: Image.Image, rect: ScreenRect, min_share: float = 0.25) -> list[tuple[float, float]]:
+    """Screen y ranges of rows painted in the selection blue (strong blue, little red)."""
+    rgb = image.convert("RGB")
+    width, height, data = rgb.width, rgb.height, rgb.tobytes()
+    blue_rows = []
+    for y in range(height):
+        hits = 0
+        for x in range(0, width, 4):
+            i = (y * width + x) * 3
+            if data[i + 2] > 150 and data[i + 2] - data[i] > 80:
+                hits += 1
+        blue_rows.append(hits > min_share * (width / 4))
+    bands: list[tuple[float, float]] = []
+    start: int | None = None
+    for y, is_blue in enumerate([*blue_rows, False]):
+        if is_blue and start is None:
+            start = y
+        elif not is_blue and start is not None:
+            bands.append((rect.top + start, rect.top + y - 1))
+            start = None
+    return bands
+
+
+def invert_bands(image: Image.Image, rect: ScreenRect, bands: Sequence[tuple[float, float]]) -> Image.Image:
+    """Grayscale copy with the selection bands inverted, so their text is dark on light."""
+    gray = image.convert("L")
+    width, out = gray.width, bytearray(gray.tobytes())
+    for top, bottom in bands:
+        for y in range(int(top - rect.top), int(bottom - rect.top) + 1):
+            for x in range(width):
+                out[y * width + x] = 255 - out[y * width + x]
+    return Image.frombytes("L", gray.size, bytes(out)).convert("RGB")
 
 
 class OcrTableReader:
@@ -185,6 +233,14 @@ class OcrTableReader:
     def read(self, rect: ScreenRect, expected_headers: Sequence[str] = ()) -> OcrTable:
         image = self._ocr.capture(rect)
         words = self._ocr.read_image(image, rect)
+        bands = selection_bands(image, rect)
+        if bands:  # selected rows: white text on blue reads badly; re-read those bands inverted
+
+            def in_band(word: OcrWord) -> bool:
+                return any(top <= word.middle_y <= bottom for top, bottom in bands)
+
+            inverted = self._ocr.read_image(invert_bands(image, rect, bands), rect)
+            words = [w for w in words if not in_band(w)] + [w for w in inverted if in_band(w)]
         rows = group_into_rows(words)
         separators: list[float] = []
         if rows:

@@ -110,11 +110,17 @@ class DebtorStage:
         ):
             editor.fill(method, payment_code)
 
-        with ev.spec_step("2.10.6", "Save once, back to the Debtor editor, select the new method"):
-            editor.save()
-            require_exact(policy, {"name": method}, payment_list.search(method), "2.10.6")
+        with ev.spec_step("2.10.6", "Save once, back to the Debtor editor, select the new method") as rec:
+            editor.save()  # waits until the editor is saved (no '*')
             debtor_ui.activate()
-            debtor_ui.select_payment_method(method)
+            # The spec's own proof that the method exists: the Debtor's Payment combo now offers it.
+            offered = [o for o in debtor_ui.payment_methods_offered() if normalize_text(o) == normalize_text(method)]
+            if len(offered) != 1:
+                raise ManualReviewRequired(
+                    "2.10.6", ReviewReason.CREATED_RECORD_NOT_FOUND, f"{method!r} offered {len(offered)}x after saving"
+                )
+            debtor_ui.select_payment_method(offered[0])
+            rec.observed = "new method selected"
 
     def _check_order_addresses(self, ctx: RunContext, spec_step: str) -> None:
         debtor = ctx.order.debtor

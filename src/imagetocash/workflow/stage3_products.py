@@ -76,8 +76,7 @@ class ProductsStage:
             with ev.spec_step("3.6", f"[{item.sku}] Create {vat_name} (code S, value {item.vat_percent}), save once"):
                 ui.vats.create_new()
                 ui.vat_editor.fill(vat_name, item.vat_percent)
-                ui.vat_editor.save()
-                require_exact(self._vat_policy, wanted_vat, ui.vats.search(vat_name), "3.6")
+                ui.vat_editor.save()  # waits until saved; 3.7 then proves it via the Product's VAT dropdown
 
         with ev.spec_step("3.7", f"[{item.sku}] New product (VAT now in the dropdown)") as rec:
             ui.product_editor.open_new_product()
