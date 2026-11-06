@@ -26,12 +26,16 @@ Turn one order image into a saved, verified Order and linked Invoice inside the 
 - Every UI step follows **precondition → action → verify → on failure (retry once, else manual review)**. After setting a field, read the value back and compare.
 - Use explicit waits (element exists, is enabled, list stopped changing, dialog closed) with timeouts. No bare `time.sleep` except tiny polling intervals inside a wait helper.
 - Grounding fallback order: UIA patterns (`Invoke`, `Value`, `SelectionItem`, `ExpandCollapse`, `Toggle`, `Grid`) → keyboard shortcuts / focus navigation → OCR or vision only inside an element rectangle obtained from UIA.
-- Fakturama is an Eclipse RCP/SWT app. Before automating a new control, inspect it (Accessibility Insights or Inspect.exe) and record its properties in `docs/control-map.md`.
+- Fakturama is an Eclipse RCP/SWT app. Before automating a new control, inspect it (`imagetocash inspect` or Accessibility Insights; Inspect.exe is not installed on this machine) and record it in `docs/control-map.md` and `config/selectors.yaml`.
+- Never search from the desktop root, and address the main window by handle: criteria lookups miss a minimized SWT window.
 - Take a screenshot after each major step into `runs/<timestamp>/` with a step-numbered filename.
 
 ## Code style
 
-- Python 3.12, type hints, small modules: `extraction/`, `validation/`, `ui/` (UIA helpers), `steps/` (one module per spec stage), `cli.py`.
+- Python 3.12, type hints, small modules under `src/imagetocash/`: `domain/` (pure rules), `extraction/` (Claude vision + parsing), `automation/` (app-agnostic UIA/OCR), `fakturama/` (screen objects), `workflow/` (one stage module per spec section), `cli/`.
+- Workflow stages depend only on the protocols in `workflow/protocols.py`; new UI behavior goes into a screen object, new rules into `domain/`.
+- Every UI element is named in `config/selectors.yaml`, not in code.
+- Run `ruff check`, `mypy` and `pytest` before committing.
 - Pydantic models for the extracted order. Configuration (paths, timeouts, model name) in a config file or env vars; never commit API keys.
 - Keep it simple: smallest code that meets the spec. No speculative abstractions.
 - Unit-test extraction validation and price math with `pytest`; these tests must not need Fakturama running.
