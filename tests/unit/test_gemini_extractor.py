@@ -34,7 +34,7 @@ def test_sends_image_with_schema_and_returns_parsed_order() -> None:
     assert extractor.extract(IMAGE) == expected
     call = models.calls[0]
     assert call["model"] == "gemini-test"
-    assert call["contents"][0].inline_data.mime_type == "image/png"
+    assert call["contents"].parts[0].inline_data.mime_type == "image/png"
     assert call["config"].response_schema is ExtractedOrder
     assert call["config"].response_mime_type == "application/json"
 
