@@ -5,8 +5,12 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any
 
+from pywinauto import keyboard
+
 from imagetocash.automation.input import read_value, select_combo_option, set_and_verify, type_into
 from imagetocash.automation.locators import locate
+from imagetocash.automation.ocr_table import OcrTableRow
+from imagetocash.domain.matching import normalize_ocr_text
 from imagetocash.fakturama.screen_context import ScreenContext
 
 
@@ -21,10 +25,13 @@ class MasterDataListScreen:
         self._title = self._ctx.open_data_view(self._view_key)
 
     def search(self, text: str) -> list[dict[str, str]]:
+        return [record for record, _ in self._search_rows(text)]
+
+    def _search_rows(self, text: str) -> list[tuple[dict[str, str], OcrTableRow]]:
         pane = self._view()
         type_into(locate(pane, self._ctx.selectors.locator("lists", "search")), text, commit_key="")
         columns = dict(self._ctx.selectors.value("lists", self._columns_key))
-        return [record for record, _ in self._ctx.read_table_rows(self._ctx.table_in(pane), columns)]
+        return self._ctx.read_table_rows(self._ctx.table_in(pane), columns)
 
     def create_new(self) -> None:
         """The green + at the upper right of the list: the view's own 'Create…' toolbar button."""
@@ -38,6 +45,34 @@ class MasterDataListScreen:
             self.open()
         self._ctx.activate_tab(self._title)
         return self._ctx.content_pane(self._title)
+
+
+class VatListScreen(MasterDataListScreen):
+    """Data > VATs. The list has no 'VAT code' column, so spec 3.5's code check opens each row whose
+    name matches (double-click at its OCR-measured point), reads 'VAT code (E-Invoice)' and closes
+    the unchanged editor again (Ctrl+W)."""
+
+    def __init__(self, ctx: ScreenContext) -> None:
+        super().__init__(ctx, "vats", "vat_columns")
+
+    def search(self, text: str) -> list[dict[str, str]]:
+        rows = []
+        for record, ocr_row in self._search_rows(text):
+            if normalize_ocr_text(record.get("name", "")) == normalize_ocr_text(text):
+                record["code"] = self._read_code(ocr_row)
+            rows.append(record)
+        return rows
+
+    def _read_code(self, ocr_row: OcrTableRow) -> str:
+        before = self._ctx.tab_titles()
+        self._ctx.click_point(ocr_row.click_point, double=True)
+        title = self._ctx.wait_for_new_tab(before)
+        try:
+            return read_value(self._ctx.find("vat_editor", "code", scope=self._ctx.content_pane(title)))
+        finally:
+            self._ctx.activate_tab(title)
+            keyboard.send_keys("^w")
+            self._ctx.activate_tab(self._title)
 
 
 class _SmallEditor:

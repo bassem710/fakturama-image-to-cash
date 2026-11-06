@@ -7,7 +7,15 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
-from imagetocash.automation.input import read_value, select_combo_option, set_and_verify, set_checkbox
+from imagetocash.automation.date_input import set_cdatetime
+from imagetocash.automation.input import (
+    combo_options,
+    read_value,
+    select_combo_option,
+    set_and_verify,
+    set_checkbox,
+)
+from imagetocash.extraction.parsing import parse_amount
 from imagetocash.fakturama.screen_context import ScreenContext
 from imagetocash.fakturama.screens.order_editor import OrderEditorScreen
 
@@ -41,25 +49,22 @@ class InvoiceEditorScreen:
         return self._as_order_view().read_item_lines()
 
     def payment_methods_offered(self) -> list[str]:
-        combo = self._field("payment_method")
-        combo.expand()
-        try:
-            return [str(i.element_info.name) for i in combo.descendants(control_type="ListItem")]
-        finally:
-            combo.collapse()
+        return [o.strip() for o in combo_options(self._field("payment_method"))]
 
     def select_payment_method(self, name: str) -> None:
         select_combo_option(self._field("payment_method"), name, spec_step="5.2", field_name="payment method")
 
     def mark_paid(self, payment_date: date, value: Decimal) -> None:
         set_checkbox(self._field("paid"), True, spec_step="5.3", field_name="paid")
-        set_and_verify(
+        set_cdatetime(  # the 'at' date appears once 'paid' is ticked
             self._field("payment_date"),
-            self._ctx.format_ui_date(payment_date),
+            payment_date,
+            parse_format=self._ctx.ui_date_parse_format,
+            commit=self._field("paid_value").set_focus,
             spec_step="5.3",
             field_name="payment date",
         )
-        set_and_verify(self._field("paid_value"), f"{value:.2f}", spec_step="5.3", field_name="Value")
+        set_and_verify(self._field("paid_value"), f"{value:.2f}", spec_step="5.3", field_name="Value", normalize=_money)
 
     def read_payment_state(self) -> dict[str, str]:
         paid = bool(self._field("paid").iface_toggle.CurrentToggleState)
@@ -88,8 +93,14 @@ class InvoiceEditorScreen:
         return OrderEditorScreen.for_existing_tab(self._ctx, self._title)
 
     def _iso(self, text: str) -> str:
-        fmt = self._ctx.settings.ui_date_format.replace("{day}", "%d")
         try:
-            return datetime.strptime(text.strip(), fmt).date().isoformat()
+            return datetime.strptime(text.strip(), self._ctx.ui_date_parse_format).date().isoformat()
         except ValueError:
             return text
+
+
+def _money(text: str) -> str:
+    try:
+        return f"{parse_amount(text):.2f}"
+    except Exception:
+        return text.strip()

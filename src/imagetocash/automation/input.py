@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Callable
 from typing import Any
 
@@ -26,9 +27,10 @@ def read_value(element: Any) -> str:
         return str(element.element_info.name or "")
 
 
-def type_into(element: Any, text: str, commit_key: str = "{TAB}") -> None:
-    """Focus, select all, type, commit. Typing (not ValuePattern.SetValue) fires SWT's own
-    modify/verify listeners, so Fakturama recalculates exactly as for a human user."""
+def type_into(element: Any, text: str, commit_key: str = "") -> None:
+    """Focus, select all, type. Typing (not ValuePattern.SetValue) fires SWT's own modify/verify
+    listeners, so Fakturama recalculates exactly as for a human user. No commit key by default:
+    several Fakturama fields are multi-line, where Tab inserts a tab character (seen in discovery)."""
     element.set_focus()
     keyboard.send_keys("^a{DELETE}", pause=0.02)
     if text:
@@ -37,13 +39,18 @@ def type_into(element: Any, text: str, commit_key: str = "{TAB}") -> None:
         keyboard.send_keys(commit_key, pause=0.02)
 
 
+def exact_text(value: str) -> str:
+    """Read-back comparison: trims the ends only, so a stray tab or newline inside is a mismatch."""
+    return value.strip()
+
+
 def set_and_verify(
     element: Any,
     value: str,
     *,
     spec_step: str,
     field_name: str,
-    normalize: Callable[[str], str] = normalize_text,
+    normalize: Callable[[str], str] = exact_text,
     reader: Callable[[Any], str] = read_value,
     attempts: int = 2,
 ) -> str:
@@ -59,15 +66,44 @@ def set_and_verify(
     )
 
 
+def combo_options(combo: Any) -> list[str]:
+    """Visible option texts of a ComboBox (its list items exist while it is expanded)."""
+    combo.expand()
+    try:
+        return [str(item.element_info.name) for item in combo.descendants(control_type="ListItem")]
+    finally:
+        combo.collapse()
+
+
+def select_tab_item(item: Any) -> None:
+    """SWT tab folders: SelectionItem.Select() either raises ('Member not found') or returns without
+    switching the editor, so verify IsSelected and fall back to clicking the tab's UIA rectangle."""
+
+    def is_selected() -> bool:
+        try:
+            return bool(item.iface_selection_item.CurrentIsSelected)
+        except Exception:
+            return False
+
+    if is_selected():
+        return
+    with contextlib.suppress(Exception):
+        item.iface_selection_item.Select()
+    if not is_selected():
+        item.click_input()
+
+
 def select_combo_option(combo: Any, option: str, *, spec_step: str, field_name: str) -> None:
-    """Select a ComboBox entry by its visible text and verify the selection."""
+    """Select the ComboBox entry whose text equals `option` after normalization (Fakturama pads some
+    options with spaces, e.g. 'Credit transfer '), then verify the selection."""
     if normalize_text(read_value(combo)) == normalize_text(option):
         return
-    try:
-        combo.select(option)
-    except Exception:
-        combo.set_focus()
-        keyboard.send_keys(escape_send_keys(option) + "{ENTER}", with_spaces=True, pause=0.02)
+    exact = [o for o in combo_options(combo) if normalize_text(o) == normalize_text(option)]
+    if len(exact) != 1:
+        raise ManualReviewRequired(
+            spec_step, ReviewReason.UI_ELEMENT_NOT_FOUND, f"{field_name}: {len(exact)} options named {option!r}"
+        )
+    combo.select(exact[0])
     observed = read_value(combo)
     if normalize_text(observed) != normalize_text(option):
         raise ManualReviewRequired(

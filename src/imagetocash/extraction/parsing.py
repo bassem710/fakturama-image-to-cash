@@ -5,6 +5,8 @@ from collections.abc import Sequence
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
+from imagetocash.domain.matching import fix_ocr_percent
+
 DEFAULT_DATE_FORMATS: tuple[str, ...] = ("%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y", "%Y/%m/%d")
 
 _NUMBER_CHARS = re.compile(r"[^0-9,.\-]")
@@ -20,7 +22,7 @@ def parse_amount(text: str) -> Decimal:
     The decimal separator is the LAST '.' or ',' when it is followed by 1-2 digits;
     any other separator is a thousands separator.
     """
-    cleaned = _NUMBER_CHARS.sub("", text or "")
+    cleaned = _NUMBER_CHARS.sub("", fix_ocr_percent(text or ""))
     if not cleaned or cleaned in {"-", ".", ","}:
         raise ParseError(f"no number in {text!r}")
     last_sep = max(cleaned.rfind("."), cleaned.rfind(","))

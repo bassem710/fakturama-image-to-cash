@@ -48,9 +48,12 @@ class WindowsScreenOcr:
         return ImageGrab.grab(bbox=(rect.left, rect.top, rect.right, rect.bottom), all_screens=True)
 
     def read_words(self, rect: ScreenRect) -> list[OcrWord]:
+        return self.read_image(self.capture(rect), rect)
+
+    def read_image(self, image: Image.Image, rect: ScreenRect) -> list[OcrWord]:
+        """OCR an image captured from `rect`; word boxes are returned in screen coordinates."""
         import winocr  # imported lazily: Windows-only runtime dependency
 
-        image = self.capture(rect)
         image = image.resize((image.width * UPSCALE, image.height * UPSCALE), Image.Resampling.LANCZOS)
         result = winocr.recognize_pil_sync(image, self._language)
         words: list[OcrWord] = []

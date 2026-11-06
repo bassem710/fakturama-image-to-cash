@@ -11,9 +11,10 @@ No hardcoded coordinates: every click target comes from UIA or from OCR inside a
 |---|---|
 | Extraction (1.1–1.2): Claude vision → typed, validated order | Built and unit-tested on the page-3 sample via a recorded extraction. **Live Claude call not yet run** (needs `ANTHROPIC_API_KEY`). |
 | Spec logic 1.1 → 5.7 (select / create-then-reselect / every manual-review stop) | Built and **tested end to end** against an in-memory Fakturama (`tests/workflow`). |
-| Order editor UI (1.3–1.8, 2.1, 3.2, 4.2–4.6) | Selectors **verified live** with UIA discovery (`docs/control-map.md`). |
-| Selection dialogs, Debtor / Product / VAT / payment editors, Documents list, Invoice editor | Implemented from the spec's wording in `config/selectors.yaml`; **needs one live calibration pass**. |
-| Separate delivery address (the sample has one) | Stops for manual review at **2.8** (UI not mapped yet). |
+| Fakturama controls for every screen in the flow | **Mapped live** (`docs/control-map.md`, `config/selectors.yaml`), including the separate delivery address (2.8) and the payment fields (5.3). |
+| Date fields (Nebula CDateTime) | **Verified live**: `Jul 14, 2026`, `Jan 31`, `Feb 29, 2024` set and committed. |
+| Debtor combo selection, typed fields with read-back, VAT row code lookup | **Verified live** on individual screens. |
+| **One full live run 1.1 → 5.7** | **Not done yet.** |
 
 ## Setup
 
@@ -77,16 +78,14 @@ Design rationale and trade-offs: [docs/design-doc.md](docs/design-doc.md). Contr
 
 ## Not done / next steps
 
-1. **Live calibration of the unverified screens** with `imagetocash inspect`: selection dialogs, Debtor,
-   Product, VAT and payment editors, Documents columns, Invoice payment fields. Expected to be mostly
-   `selectors.yaml` edits.
-2. **Separate delivery address (2.8).** The sample's delivery address differs from billing; the spec shows only
-   the identical case. Needs the "add second address + Delivery role" UI mapped.
-3. **Items grid editing (3.13–3.15)** uses OCR column positions plus double-click editing on the NatTable;
-   needs a live check of NatTable's edit gesture.
-4. **Date field (1.5)** is a Nebula CDateTime; typing the full date may need field-by-field input.
-5. Order-level discount / shipping from the image (4.2) stops for review instead of being set.
-6. No duplicate-order guard: running the same image twice creates a second Order and Invoice, as the spec
+1. **One full live run** against a clean workspace, then a second run (select branches), with the
+   recording and annotated screenshots for the deliverable.
+2. **Items grid editing (3.13–3.15)**: OCR column positions plus double-click editing on the NatTable;
+   the grid has not been seen with data yet, so its column titles and edit gesture still need a live check.
+3. **OCR of empty-looking cells**: single digits (e.g. `0` in *Net Days*) can be missed by Windows OCR; the
+   flow does not depend on those columns, but rows are read twice for stability.
+4. Order-level discount / shipping from the image (4.2) stops for review instead of being set.
+5. No duplicate-order guard: running the same image twice creates a second Order and Invoice, as the spec
    does not ask for one.
 
 ## Written question

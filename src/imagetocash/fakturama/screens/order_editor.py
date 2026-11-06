@@ -9,7 +9,14 @@ from typing import Any
 
 from pywinauto import keyboard
 
-from imagetocash.automation.input import escape_send_keys, read_value, select_combo_option, set_and_verify
+from imagetocash.automation.date_input import set_cdatetime
+from imagetocash.automation.input import (
+    escape_send_keys,
+    read_value,
+    select_combo_option,
+    select_tab_item,
+    set_and_verify,
+)
 from imagetocash.automation.locators import largest_leaf_pane
 from imagetocash.automation.screen_ocr import ScreenRect
 from imagetocash.automation.waiting import wait_until
@@ -57,8 +64,14 @@ class OrderEditorScreen:
         return self._number
 
     def set_order_date(self, value: date) -> None:
-        text = self._ctx.format_ui_date(value)
-        set_and_verify(self._field("date"), text, spec_step="1.5", field_name="Date")
+        set_cdatetime(
+            self._field("date"),
+            value,
+            parse_format=self._ctx.ui_date_parse_format,
+            commit=self._field("customer_reference").set_focus,
+            spec_step="1.5",
+            field_name="Date",
+        )
 
     def set_customer_reference(self, value: str) -> None:
         set_and_verify(self._field("customer_reference"), value, spec_step="1.6", field_name="Cust.Ref.")
@@ -84,7 +97,7 @@ class OrderEditorScreen:
             item = next((t for t in pane.descendants(control_type="TabItem") if t.element_info.name == tab_name), None)
             if item is None:
                 continue
-            item.iface_selection_item.Select()
+            select_tab_item(item)
             folder = wait_until(
                 partial(_tab_folder_named, pane, tab_name),
                 timeout=self._ctx.settings.timeouts.element,

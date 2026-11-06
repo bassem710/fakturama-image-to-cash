@@ -43,14 +43,29 @@ read with Windows OCR inside the UIA rectangle · **?** = not yet discovered (ne
 | 4.3 | Total Net / VAT / Total | UIA | `Edit` names `Total Gross`→(`Total Net` in Net mode), `VAT`, `Total` |
 | 4.6 | Follow-up **Invoice** | UIA | `Group` `Create a follow-up document` → `Button` `Invoice` (Invoke) |
 
-## Lists and dialogs
-| Spec | Screen | Status |
+## Lists and dialogs (verified 2026-11-06)
+| Spec | Screen | How |
 |---|---|---|
-| 2.2–2.3, 2.12 | Select the address dialog | **?** opened via the icon; contents still to map (NatTable expected → OCR) |
-| 3.3, 3.12 | Select a product dialog | **?** |
-| 2.5–2.11 | Debtor editor (tabs Addresses / Miscellaneous / Payment) | **?** |
-| 2.10.1–2.10.6 | terms of payment list + editor | **?** list = NatTable (OCR), search box = `Edit` after `Text` `Search:` |
-| 3.4–3.6 | VATs list + editor | **?** same list layout as Documents |
-| 3.7–3.11 | Product editor | **?** |
-| 4.5, 5.5 | Data > Documents | List = NatTable pane (OCR); search `Edit` after `Text` `Search:` (verified) |
-| 5.1–5.3 | Invoice editor | **?** expected to mirror the Order editor plus paid / payment date / Value |
+| 2.2–2.3, 2.12 | **Select the address**: top-level `#32770` window | Search = Edit after `Search:`; OK / Cancel = Buttons (Invoke); list = custom-drawn pane (scrollbar children only) → OCR. Columns **No., First Name, Name, Company, ZIP, City**, headers **centred** → columns from grid lines. Narrow columns truncate with `...` → prefix match. |
+| 3.3, 3.12 | **Select a product**: same layout | Columns **Item No., Name, Description, Stock, Price, VAT** (left-aligned). |
+| 2.5–2.9 | **New Debtor** editor | Company = Edit `Company`; `First Name Last Name` label → 2 Edits (nth 0/1). Tabs Addresses / Miscellaneous / Notice. Addresses → `Main address` tab: `additional name`, `Street`, `ZIP - City` (2 Edits), `Country` combo, `E-Mail`, `Telephone`; `+` adds `additional address #1` (same fields). Roles: Button after `address type` opens a popup (child `#32770` pane of the main window) with CheckBoxes **Invoice address** / **Delivery address** (Toggle). |
+| 2.9–2.10 | Debtor **Miscellaneous** tab | `Alias name`, `Discount`, `Net or Gross` (`---`/Net/Gross), **`Payment`** combo (lists payment-method *descriptions*). |
+| 2.10.1–2.10.2 | **terms of payment** list | Columns Standard, Name, Description, Discount, Disc. Days, Net Days; green + = Button `Create a new term of payment`. |
+| 2.10.3–2.10.6 | **New Term of Payment** editor | `Name`, `Description`, `Account`; payment code combo is named **`!editorPaymentPaymentcode!`** (Fakturama's untranslated key). Options are space-padded (`'Credit transfer '`). Cash discount / Discount Days / Net Days default to 0. |
+| 3.4–3.5 | **VATs** list | Columns Standard, Name, Description, Value; **no VAT code column** → the matching row is opened (double-click), `VAT code (E-Invoice)` read, editor closed (Ctrl+W). Green + = `Create a new tax rate`. |
+| 3.6 | **New TAX Rate** editor | `Name`, `Description`, `VAT code (E-Invoice)` (default `S (Standard rate)`), `Value` (`0%`), `Set as standard` (never clicked). |
+| 3.7–3.11 | **New product** editor | `Item Number`, `Name`, `Description` (multi-line), `Price (gross)` / `cost price (net)` = Edits after labels, `VAT` combo (lists VAT *descriptions*), `Stock`. |
+| 4.5, 5.5 | **Documents** list | Icon-only type column, then **Document, Date, Name, Cust.Ref., State, Total, Printed**; type derived from the number prefix (`PO…` = Order). |
+| 5.1–5.3 | Invoice editor | Same as the Order editor plus `Service date`, `Order Date`; **`paid` CheckBox** → payment-method combo after it; when ticked: `at` (date) and `Value`. Follow-up group: Delivery, Invoice Correction, Dunning (never used). |
+
+## Gotchas found live
+| Behavior | Handling |
+|---|---|
+| `SelectionItem.Select()` on SWT tabs either raises "Member not found" or returns without switching the editor | `select_tab_item`: verify `IsSelected`, else click the tab's UIA rectangle |
+| Hidden editors' content is absent from the UIA tree | Always activate the editor tab before locating its fields |
+| Company and Description Edits are multi-line: Tab inserts a tab character | No commit key when typing; read-back compares exactly (ends trimmed only) |
+| Nebula CDateTime ignores UIA `SetValue` (reverts on focus loss) and edits one field at a time | `date_input.set_cdatetime`: probe the selected field with Up/Down, move with Right, type zero-padded digits year→month→day, verify after focus leaves |
+| Windows OCR reads the list's `%` as `0/0` | `fix_ocr_percent` before parsing / comparing |
+| Windows OCR confuses O/0 and I/1 in codes (`CHR-ERG-OI`) | OCR-tolerant comparison on both sides |
+| Combo options carry trailing spaces | Select the option whose normalized text matches, by its exact name |
+| **"Save Parts" dialog (closing dirty editors): the checkbox state is NOT readable through UIA/MSAA** | Never close dirty editors programmatically; the run saves each editor once via the toolbar, as the spec says |

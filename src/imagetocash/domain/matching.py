@@ -15,6 +15,7 @@ Outcomes:
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from decimal import Decimal, InvalidOperation
@@ -39,9 +40,18 @@ def normalize_ocr_text(value: str | None) -> str:
     return normalize_text(value).translate(_OCR_CONFUSABLES)
 
 
+_OCR_PERCENT_GLYPH = re.compile(r"\s*[0oO°]\s*/\s*[0oO°]\s*$")
+_ELLIPSIS = ("...", "…")
+
+
+def fix_ocr_percent(text: str) -> str:
+    """Windows OCR reads the UI's '%' as '0/0' ('0.00 %' -> '0.00 0/0'); restore it."""
+    return _OCR_PERCENT_GLYPH.sub("%", text)
+
+
 def normalize_percent(value: str | None) -> str:
-    """'19', '19%', '19.00 %', '19,0' -> '19'."""
-    text = normalize_text(value).replace("%", "").replace(",", ".").strip()
+    """'19', '19%', '19.00 %', '19,0', OCR '19.00 0/0' -> '19'."""
+    text = normalize_text(fix_ocr_percent(value or "")).replace("%", "").replace(",", ".").strip()
     try:
         return format(Decimal(text).normalize(), "f")
     except InvalidOperation:
@@ -92,8 +102,15 @@ class RecordMatchPolicy:
         normalize = self.normalizers.get(field_name, self.default_normalizer)
         return normalize(record.get(field_name, ""))
 
+    def _field_equal(self, wanted: Record, row: Record, field_name: str) -> bool:
+        expected, shown = self._normalized(wanted, field_name), self._normalized(row, field_name)
+        if shown.endswith(_ELLIPSIS):  # a narrow list column truncated the value: compare the prefix
+            prefix = shown.rstrip(".…").strip()
+            return len(prefix) >= 3 and expected.startswith(prefix)
+        return expected == shown
+
     def _fields_equal(self, wanted: Record, row: Record, field_names: Sequence[str]) -> bool:
-        return all(self._normalized(wanted, f) == self._normalized(row, f) for f in field_names)
+        return all(self._field_equal(wanted, row, f) for f in field_names)
 
     def evaluate(self, wanted: Record, rows: Sequence[Record]) -> MatchOutcome:
         all_fields = (*self.identity_fields, *self.checked_fields)

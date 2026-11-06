@@ -1,16 +1,21 @@
-"""Data > Documents (spec 4.5, 5.5): search box verified; list is custom-drawn (OCR)."""
+"""Data > Documents (spec 4.5, 5.5). Columns: an icon-only type column, Document, Date, Name,
+Cust.Ref., State, Total, Printed. The type is derived from the document number prefix."""
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
 
 from imagetocash.fakturama.screens.master_data import MasterDataListScreen
 
 
 class DocumentsListScreen:
-    def __init__(self, list_screen: MasterDataListScreen, ui_date_format: str) -> None:
+    def __init__(
+        self, list_screen: MasterDataListScreen, date_parse_format: str, type_by_prefix: Mapping[str, str]
+    ) -> None:
         self._list = list_screen
-        self._ui_date_format = ui_date_format.replace("{day}", "%d")
+        self._date_format = date_parse_format
+        self._type_by_prefix = dict(type_by_prefix)
 
     def open(self) -> None:
         self._list.open()
@@ -19,10 +24,12 @@ class DocumentsListScreen:
         rows = self._list.search(customer_reference)
         for row in rows:
             row["date"] = self._iso_date(row.get("date", ""))
+            number = row.get("number", "").strip().upper()
+            row["type"] = next((t for p, t in self._type_by_prefix.items() if number.startswith(p)), "")
         return rows
 
     def _iso_date(self, text: str) -> str:
         try:
-            return datetime.strptime(text.strip(), self._ui_date_format).date().isoformat()
+            return datetime.strptime(text.strip(), self._date_format).date().isoformat()
         except ValueError:
             return text

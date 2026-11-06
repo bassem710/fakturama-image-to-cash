@@ -5,7 +5,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any
 
-from imagetocash.automation.input import read_value, select_combo_option, set_and_verify
+from imagetocash.automation.input import combo_options, read_value, select_combo_option, set_and_verify
 from imagetocash.domain.models import LineItem
 from imagetocash.extraction.parsing import parse_amount
 from imagetocash.fakturama.screen_context import ScreenContext
@@ -32,12 +32,7 @@ class ProductEditorScreen:
         self._title = self._ctx.wait_for_new_tab(before)
 
     def vat_options(self) -> list[str]:
-        combo = self._field("vat")
-        combo.expand()
-        try:
-            return [str(item.element_info.name) for item in combo.descendants(control_type="ListItem")]
-        finally:
-            combo.collapse()
+        return [o.strip() for o in combo_options(self._field("vat"))]
 
     def fill(self, item: LineItem, gross_price: Decimal, vat_name: str) -> None:
         set_and_verify(self._field("item_number"), item.sku, spec_step="3.8", field_name="Item Number")

@@ -71,19 +71,18 @@ class ByLabel:
     label: str
     target_type: str = "Edit"
     label_type: str = "Text"
+    nth: int = 0  # "First Name Last Name" / "ZIP - City": one label, two fields
 
     @property
     def description(self) -> str:
-        return f"ByLabel({self.label!r} -> {self.target_type})"
+        return f"ByLabel({self.label!r} -> {self.target_type} #{self.nth})"
 
     def find(self, scope: Any) -> Any | None:
         ordered = list(scope.descendants())
         for position, element in enumerate(ordered):
             if _matches(element, self.label_type, self.label, None, None):
-                return next(
-                    (e for e in ordered[position + 1 :] if e.element_info.control_type == self.target_type),
-                    None,
-                )
+                targets = [e for e in ordered[position + 1 :] if e.element_info.control_type == self.target_type]
+                return targets[self.nth] if len(targets) > self.nth else None
         return None
 
 
@@ -145,7 +144,12 @@ def build_locator(spec: Mapping[str, Any] | Sequence[Mapping[str, Any]]) -> Loca
             index=int(spec.get("index", 0)),
         )
     if kind == "label":
-        return ByLabel(label=spec["label"], target_type=spec.get("target", "Edit"))
+        return ByLabel(
+            label=spec["label"],
+            target_type=spec.get("target", "Edit"),
+            label_type=spec.get("label_type", "Text"),
+            nth=int(spec.get("nth", 0)),
+        )
     if kind == "order":
         return ByOrderInLabeledGroup(
             label=spec["label"], target_type=spec.get("target", "Image"), position=int(spec.get("position", 0))
@@ -154,8 +158,13 @@ def build_locator(spec: Mapping[str, Any] | Sequence[Mapping[str, Any]]) -> Loca
 
 
 def largest_leaf_pane(scope: Any) -> Any | None:
-    """Custom-drawn widgets (NatTable) appear in UIA as a childless Pane: the biggest one in `scope`."""
-    leaves = [p for p in scope.descendants(control_type="Pane") if not p.children()]
+    """Custom-drawn widgets (NatTable) appear in UIA as a Pane whose only children are scrollbars:
+    the biggest such pane in `scope`."""
+    leaves = [
+        p
+        for p in scope.descendants(control_type="Pane")
+        if all(c.element_info.control_type == "ScrollBar" for c in p.children())
+    ]
     if not leaves:
         return None
     return max(leaves, key=lambda p: p.rectangle().width() * p.rectangle().height())

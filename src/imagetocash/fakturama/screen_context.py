@@ -11,6 +11,7 @@ from typing import Any
 import yaml
 from pywinauto import mouse
 
+from imagetocash.automation.input import select_tab_item
 from imagetocash.automation.locators import Locator, build_locator, largest_leaf_pane, locate
 from imagetocash.automation.ocr_table import OcrTable, OcrTableReader, OcrTableRow
 from imagetocash.automation.screen_ocr import ScreenRect
@@ -85,10 +86,7 @@ class ScreenContext:
             timeout=self.settings.timeouts.element,
             what=f"tab '{title}'",
         )
-        try:
-            tab.iface_selection_item.Select()
-        except Exception:
-            tab.click_input()
+        select_tab_item(tab)
 
     def wait_for_new_tab(self, before: list[str], title_prefix: str = "") -> str:
         def new_title() -> str | None:
@@ -151,5 +149,9 @@ class ScreenContext:
         (mouse.double_click if double else mouse.click)(coords=point)
 
     # --- formatting ---------------------------------------------------------------------------------
+    @property
+    def ui_date_parse_format(self) -> str:
+        return self.settings.ui_date_format.replace("{day}", "%d")
+
     def format_ui_date(self, value: date) -> str:
         return value.strftime(self.settings.ui_date_format.replace("{day}", str(value.day)))

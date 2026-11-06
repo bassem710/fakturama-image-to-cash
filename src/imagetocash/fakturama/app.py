@@ -14,6 +14,7 @@ from imagetocash.fakturama.screens.master_data import (
     MasterDataListScreen,
     PaymentMethodEditorScreen,
     VatEditorScreen,
+    VatListScreen,
 )
 from imagetocash.fakturama.screens.order_editor import OrderEditorScreen
 from imagetocash.fakturama.screens.product_editor import ProductEditorScreen
@@ -25,11 +26,13 @@ class FakturamaApp:
         self.debtor = DebtorEditorScreen(ctx)
         self.payment_methods = MasterDataListScreen(ctx, "payment_methods", "payment_columns")
         self.payment_method_editor = PaymentMethodEditorScreen(ctx)
-        self.vats = MasterDataListScreen(ctx, "vats", "vat_columns")
+        self.vats = VatListScreen(ctx)
         self.vat_editor = VatEditorScreen(ctx)
         self.product_editor = ProductEditorScreen(ctx)
         self.documents = DocumentsListScreen(
-            MasterDataListScreen(ctx, "documents", "documents_columns"), ctx.settings.ui_date_format
+            MasterDataListScreen(ctx, "documents", "documents_columns"),
+            ctx.ui_date_parse_format,
+            ctx.selectors.value("lists", "document_type_by_prefix"),
         )
         self.invoice = InvoiceEditorScreen(ctx, self.order)
 

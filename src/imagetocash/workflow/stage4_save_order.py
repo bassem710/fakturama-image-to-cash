@@ -17,8 +17,8 @@ def single_row(rows: Sequence[Row], kind: str, number: str, spec_step: str) -> R
     matches = [
         r
         for r in rows
-        if normalize_text(r.get("type", "")) == normalize_text(kind)
-        and normalize_ocr_text(r.get("number", "")) == normalize_ocr_text(number)
+        if normalize_ocr_text(r.get("number", "")) == normalize_ocr_text(number)
+        and (not r.get("type") or normalize_text(r.get("type", "")) == normalize_text(kind))
     ]
     if len(matches) != 1:
         raise ManualReviewRequired(
