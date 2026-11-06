@@ -15,8 +15,9 @@ from imagetocash.automation.input import (
     set_and_verify,
     set_checkbox,
 )
+from imagetocash.domain.review import ManualReviewRequired, ReviewReason
 from imagetocash.extraction.parsing import parse_amount
-from imagetocash.fakturama.screen_context import ScreenContext
+from imagetocash.fakturama.screen_context import EditorTab, ScreenContext
 from imagetocash.fakturama.screens.order_editor import OrderEditorScreen
 
 S = "invoice_editor"
@@ -25,11 +26,11 @@ S = "invoice_editor"
 class InvoiceEditorScreen:
     def __init__(self, ctx: ScreenContext, order: OrderEditorScreen) -> None:
         self._ctx, self._order = ctx, order
-        self._title = ""
+        self._tab: EditorTab | None = None
 
     def wait_until_open(self) -> None:
         """4.7: the linked Invoice opens as a new editor tab after the Order's follow-up action."""
-        self._title = self._ctx.wait_for_new_tab(self._order.tabs_before_follow_up)
+        self._tab = self._ctx.wait_for_new_tab(self._order.tabs_before_follow_up)
 
     def read_copied_values(self) -> dict[str, str]:
         totals = self._totals()
@@ -75,12 +76,16 @@ class InvoiceEditorScreen:
         return state
 
     def save(self) -> None:
-        self._ctx.save_via_toolbar(self._title)
+        self._ctx.save_editor(self._require_tab())
 
     # --- helpers ---------------------------------------------------------------------------------
     def _pane(self) -> Any:
-        self._ctx.activate_tab(self._title)
-        return self._ctx.content_pane(self._title)
+        return self._ctx.editor_pane(self._require_tab())
+
+    def _require_tab(self) -> EditorTab:
+        if self._tab is None:
+            raise ManualReviewRequired("4.7", ReviewReason.UI_ELEMENT_NOT_FOUND, "linked Invoice editor not open")
+        return self._tab
 
     def _field(self, key: str) -> Any:
         return self._ctx.find(S, key, scope=self._pane())
@@ -90,7 +95,7 @@ class InvoiceEditorScreen:
 
     def _as_order_view(self) -> OrderEditorScreen:
         """The Invoice editor shares the Order editor's layout for addresses, items and totals."""
-        return OrderEditorScreen.for_existing_tab(self._ctx, self._title)
+        return OrderEditorScreen.for_existing_tab(self._ctx, self._require_tab())
 
     def _iso(self, text: str) -> str:
         try:

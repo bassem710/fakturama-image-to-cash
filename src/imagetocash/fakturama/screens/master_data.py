@@ -11,7 +11,8 @@ from imagetocash.automation.input import read_value, select_combo_option, set_an
 from imagetocash.automation.locators import locate
 from imagetocash.automation.ocr_table import OcrTableRow
 from imagetocash.domain.matching import normalize_ocr_text
-from imagetocash.fakturama.screen_context import ScreenContext
+from imagetocash.domain.review import ManualReviewRequired, ReviewReason
+from imagetocash.fakturama.screen_context import EditorTab, ScreenContext
 
 
 class MasterDataListScreen:
@@ -36,9 +37,9 @@ class MasterDataListScreen:
     def create_new(self) -> None:
         """The green + at the upper right of the list: the view's own 'Create…' toolbar button."""
         tab = next(t for t in self._ctx.main().descendants(control_type="Tab") if t.element_info.name == self._title)
-        before = self._ctx.tab_titles()
+        before = self._ctx.tab_snapshot()
         self._ctx.press(locate(tab, self._ctx.selectors.locator("lists", "create_new")))
-        self._ctx.wait_for_new_tab(before)
+        self._ctx.last_record_editor = self._ctx.wait_for_new_tab(before)
 
     def _view(self) -> Any:
         if not self._title:
@@ -64,14 +65,15 @@ class VatListScreen(MasterDataListScreen):
         return rows
 
     def _read_code(self, ocr_row: OcrTableRow) -> str:
-        before = self._ctx.tab_titles()
+        before = self._ctx.tab_snapshot()
         self._ctx.click_point(ocr_row.click_point, double=True)
-        title = self._ctx.wait_for_new_tab(before)
+        editor = self._ctx.wait_for_new_tab(before)
         try:
-            return read_value(self._ctx.find("vat_editor", "code", scope=self._ctx.content_pane(title)))
+            return read_value(self._ctx.find("vat_editor", "code", scope=self._ctx.editor_pane(editor)))
         finally:
-            self._ctx.activate_tab(title)
-            keyboard.send_keys("^w")
+            self._ctx.activate_editor(editor)
+            if not self._ctx.is_dirty(editor):  # never close an editor with changes (no save prompt)
+                keyboard.send_keys("^w")
             self._ctx.activate_tab(self._title)
 
 
@@ -81,17 +83,19 @@ class _SmallEditor:
     def __init__(self, ctx: ScreenContext) -> None:
         self._ctx = ctx
 
+    def _tab(self) -> EditorTab:
+        if self._ctx.last_record_editor is None:
+            raise ManualReviewRequired("-", ReviewReason.UI_ELEMENT_NOT_FOUND, "no record editor opened")
+        return self._ctx.last_record_editor
+
     def _editor(self) -> Any:
-        selected = [t for t in self._ctx.tab_items() if t.iface_selection_item.CurrentIsSelected]
-        title = str(selected[-1].element_info.name).lstrip("*") if selected else ""
-        return self._ctx.content_pane(title)
+        return self._ctx.editor_pane(self._tab())
 
     def _field(self, key: str) -> Any:
         return self._ctx.find(self.screen, key, scope=self._editor())
 
     def save(self) -> None:
-        selected = [t for t in self._ctx.tab_items() if t.iface_selection_item.CurrentIsSelected]
-        self._ctx.save_via_toolbar(str(selected[-1].element_info.name).lstrip("*"))
+        self._ctx.save_editor(self._tab())
 
 
 class PaymentMethodEditorScreen(_SmallEditor):

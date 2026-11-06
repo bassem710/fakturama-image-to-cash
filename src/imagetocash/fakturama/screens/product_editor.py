@@ -7,8 +7,9 @@ from typing import Any
 
 from imagetocash.automation.input import combo_options, read_value, select_combo_option, set_and_verify
 from imagetocash.domain.models import LineItem
+from imagetocash.domain.review import ManualReviewRequired, ReviewReason
 from imagetocash.extraction.parsing import parse_amount
-from imagetocash.fakturama.screen_context import ScreenContext
+from imagetocash.fakturama.screen_context import EditorTab, ScreenContext
 
 S = "product_editor"
 
@@ -23,13 +24,13 @@ def _amount_text(text: str) -> str:
 class ProductEditorScreen:
     def __init__(self, ctx: ScreenContext) -> None:
         self._ctx = ctx
-        self._title = ""
+        self._tab: EditorTab | None = None
 
     def open_new_product(self) -> None:
         self._ctx.session.bring_to_front()
-        before = self._ctx.tab_titles()
+        before = self._ctx.tab_snapshot()
         self._ctx.find("main", "new_product").click_input()  # navigation entry: no Invoke pattern
-        self._title = self._ctx.wait_for_new_tab(before)
+        self._tab = self._ctx.wait_for_new_tab(before)
 
     def vat_options(self) -> list[str]:
         return [o.strip() for o in combo_options(self._field("vat"))]
@@ -54,7 +55,12 @@ class ProductEditorScreen:
         # Category, GTIN, supplier code, allowance, picture, user field 1: left untouched (3.10).
 
     def save(self) -> None:
-        self._ctx.save_via_toolbar(self._title)
+        self._ctx.save_editor(self._require_tab())
+
+    def _require_tab(self) -> EditorTab:
+        if self._tab is None:
+            raise ManualReviewRequired("3.7", ReviewReason.UI_ELEMENT_NOT_FOUND, "no Product editor opened")
+        return self._tab
 
     def _field(self, key: str) -> Any:
-        return self._ctx.find(S, key, scope=self._ctx.content_pane(self._title))
+        return self._ctx.find(S, key, scope=self._ctx.editor_pane(self._require_tab()))

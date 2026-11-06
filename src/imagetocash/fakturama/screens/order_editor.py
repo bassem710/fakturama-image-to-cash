@@ -23,7 +23,7 @@ from imagetocash.automation.waiting import wait_until
 from imagetocash.domain.models import LineItem
 from imagetocash.domain.review import ManualReviewRequired, ReviewReason
 from imagetocash.extraction.parsing import parse_amount
-from imagetocash.fakturama.screen_context import ScreenContext
+from imagetocash.fakturama.screen_context import EditorTab, ScreenContext
 from imagetocash.fakturama.screens.selection_dialog import SelectionDialogScreen
 
 S = "order_editor"
@@ -32,32 +32,29 @@ S = "order_editor"
 class OrderEditorScreen:
     def __init__(self, ctx: ScreenContext) -> None:
         self._ctx = ctx
-        self._title = str(ctx.selectors.value(S, "tab_title"))
+        self._title_prefix = str(ctx.selectors.value(S, "tab_title"))
+        self._tab: EditorTab | None = None
         self._number = ""
-        self.tabs_before_follow_up: list[str] = []
+        self.tabs_before_follow_up: dict[tuple[int, ...], int] = {}
 
     @classmethod
-    def for_existing_tab(cls, ctx: ScreenContext, title: str) -> OrderEditorScreen:
+    def for_existing_tab(cls, ctx: ScreenContext, tab: EditorTab) -> OrderEditorScreen:
         """Read-only reuse of this editor's locators on another document tab with the same layout."""
         screen = cls(ctx)
-        screen._title = title
+        screen._tab = tab
         return screen
 
     # --- 1.3-1.8 ---------------------------------------------------------------------------------
     def open_new_order(self) -> None:
+        """1.3: a NEW Order editor, tracked by identity; a leftover 'New Order' draft is ignored."""
         self._ctx.session.bring_to_front()
-        before = self._ctx.tab_titles()
+        before = self._ctx.tab_snapshot()
         self._ctx.press(self._ctx.find("main", "new_order"))
-        self._title = self._ctx.wait_for_new_tab(before, title_prefix=self._title)
+        self._tab = self._ctx.wait_for_new_tab(before, title_prefix=self._title_prefix)
         self._ctx.find(S, "customer_reference", scope=self._pane())  # editor is ready
 
     def activate(self) -> None:
-        candidates = [self._title, self._number]
-        title = next((t for t in candidates if t and t in [x.lstrip("*") for x in self._ctx.tab_titles()]), None)
-        if title is None:
-            raise ManualReviewRequired("1.8", ReviewReason.UI_ELEMENT_NOT_FOUND, "the open Order tab disappeared")
-        self._title = title
-        self._ctx.activate_tab(title)
+        self._ctx.activate_editor(self._require_tab())
 
     def read_document_number(self) -> str:
         self._number = read_value(self._field("number"))
@@ -153,18 +150,22 @@ class OrderEditorScreen:
         }
 
     def save(self) -> None:
-        self.activate()
-        self._ctx.save_via_toolbar(self._title)
+        self._ctx.save_editor(self._require_tab())
 
     def create_follow_up_invoice(self) -> None:
         """4.6: the 'Create a follow-up document' group's Invoice button keeps the Order link."""
         self.activate()
-        self.tabs_before_follow_up = self._ctx.tab_titles()
+        self.tabs_before_follow_up = self._ctx.tab_snapshot()
         self._ctx.press(self._field("follow_up_invoice"))
 
     # --- helpers ----------------------------------------------------------------------------------------
+    def _require_tab(self) -> EditorTab:
+        if self._tab is None:
+            raise ManualReviewRequired("1.8", ReviewReason.UI_ELEMENT_NOT_FOUND, "no Order editor opened")
+        return self._tab
+
     def _pane(self) -> Any:
-        return self._ctx.content_pane(self._title)
+        return self._ctx.editor_pane(self._require_tab())
 
     def _field(self, key: str) -> Any:
         return self._ctx.find(S, key, scope=self._pane())

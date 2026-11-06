@@ -21,7 +21,7 @@ from imagetocash.automation.waiting import wait_until
 from imagetocash.domain.matching import normalize_text
 from imagetocash.domain.models import Address, Debtor
 from imagetocash.domain.review import ManualReviewRequired, ReviewReason
-from imagetocash.fakturama.screen_context import ScreenContext
+from imagetocash.fakturama.screen_context import EditorTab, ScreenContext
 
 S = "debtor_editor"
 
@@ -29,17 +29,17 @@ S = "debtor_editor"
 class DebtorEditorScreen:
     def __init__(self, ctx: ScreenContext) -> None:
         self._ctx = ctx
-        self._title = ""
+        self._tab: EditorTab | None = None
 
     def open_new_debtor(self) -> None:
         """2.5: the Order tab stays open; New Contact in the left New panel opens 'New Debtor'."""
         self._ctx.session.bring_to_front()
-        before = self._ctx.tab_titles()
+        before = self._ctx.tab_snapshot()
         self._ctx.find("main", "new_contact").click_input()  # navigation entry: no Invoke pattern
-        self._title = self._ctx.wait_for_new_tab(before)
+        self._tab = self._ctx.wait_for_new_tab(before)
 
     def activate(self) -> None:
-        self._ctx.activate_tab(self._title)
+        self._ctx.activate_editor(self._require_tab())
 
     def fill_identity(self, debtor: Debtor) -> None:
         # 2.6: Customer ID and Salutation ('---') are deliberately not touched.
@@ -84,12 +84,16 @@ class DebtorEditorScreen:
         select_combo_option(self._field("payment_method"), name, spec_step="2.10", field_name="Payment")
 
     def save(self) -> None:
-        self.activate()
-        self._ctx.save_via_toolbar(self._title)
+        self._ctx.save_editor(self._require_tab())
 
     # --- helpers --------------------------------------------------------------------------------
     def _pane(self) -> Any:
-        return self._ctx.content_pane(self._title)
+        return self._ctx.editor_pane(self._require_tab())
+
+    def _require_tab(self) -> EditorTab:
+        if self._tab is None:
+            raise ManualReviewRequired("2.5", ReviewReason.UI_ELEMENT_NOT_FOUND, "no Debtor editor opened")
+        return self._tab
 
     def _field(self, key: str, scope: Any | None = None) -> Any:
         return self._ctx.find(S, key, scope=scope if scope is not None else self._pane())

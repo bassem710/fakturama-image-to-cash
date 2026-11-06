@@ -22,6 +22,12 @@ from imagetocash.domain.matching import normalize_text
 from imagetocash.domain.review import ManualReviewRequired, ReviewReason
 
 
+@dataclass(frozen=True)
+class EditorTab:
+    folder_id: tuple[int, ...]
+    index: int
+
+
 class SelectorMap:
     def __init__(self, raw: Mapping[str, Any]) -> None:
         self._raw = raw
@@ -43,6 +49,7 @@ class ScreenContext:
     selectors: SelectorMap
     tables: OcrTableReader
     settings: Settings
+    last_record_editor: EditorTab | None = None  # set by a list's green + (VAT, payment method)
 
     # --- locating and acting ---------------------------------------------------------------
     def main(self) -> Any:
@@ -63,15 +70,6 @@ class ScreenContext:
         except Exception:
             element.click_input()
 
-    def save_via_toolbar(self, editor_title: str) -> None:
-        """Toolbar Save, exactly once, then wait until the editor tab loses its dirty marker '*'."""
-        self.press(self.find("main", "save"))
-        wait_until(
-            lambda: not any(t.startswith("*") and editor_title in t for t in self.tab_titles()),
-            timeout=self.settings.timeouts.dialog,
-            what=f"'{editor_title}' to be saved",
-        )
-
     # --- tabs and views ------------------------------------------------------------------------
     def tab_items(self) -> list[Any]:
         return list(self.main().descendants(control_type="TabItem"))
@@ -80,6 +78,7 @@ class ScreenContext:
         return [str(t.element_info.name) for t in self.tab_items()]
 
     def activate_tab(self, title: str) -> None:
+        """Views (Documents, VATs, ...) by title; editors use activate_editor() instead."""
         self.session.bring_to_front()
         tab = wait_until(
             lambda: next((t for t in self.tab_items() if t.element_info.name.lstrip("*") == title), None),
@@ -88,12 +87,63 @@ class ScreenContext:
         )
         select_tab_item(tab)
 
-    def wait_for_new_tab(self, before: list[str], title_prefix: str = "") -> str:
-        def new_title() -> str | None:
-            fresh = [t for t in self.tab_titles() if t not in before and t.lstrip("*").startswith(title_prefix)]
-            return fresh[0].lstrip("*") if fresh else None
+    # --- editors, tracked by identity, not by title -----------------------------------------------
+    # A leftover draft can carry the same title ("New Order") as the editor this run opens. UIA
+    # runtime ids are shared by all tabs of one tab folder, and Fakturama appends new editors at
+    # the end of their folder, so an editor is identified by (folder, position) at the moment it
+    # opens. Older drafts at earlier positions are never activated, filled or saved.
+    def _tab_folders(self) -> dict[tuple[int, ...], list[Any]]:
+        folders: dict[tuple[int, ...], list[Any]] = {}
+        for item in self.tab_items():
+            folders.setdefault(tuple(item.element_info.runtime_id), []).append(item)
+        return folders
 
-        return wait_until(new_title, timeout=self.settings.timeouts.dialog, what="a new editor tab")
+    def tab_snapshot(self) -> dict[tuple[int, ...], int]:
+        return {folder: len(items) for folder, items in self._tab_folders().items()}
+
+    def wait_for_new_tab(self, before: Mapping[tuple[int, ...], int], title_prefix: str = "") -> EditorTab:
+        def new_tab() -> EditorTab | None:
+            for folder, items in self._tab_folders().items():
+                if folder not in before:  # a brand-new folder is an editor's inner tabs, not an editor
+                    continue
+                for index in range(before[folder], len(items)):
+                    if str(items[index].element_info.name).lstrip("*").startswith(title_prefix):
+                        return EditorTab(folder, index)
+            return None
+
+        return wait_until(new_tab, timeout=self.settings.timeouts.dialog, what="the new editor tab")
+
+    def editor_item(self, tab: EditorTab) -> Any:
+        items = self._tab_folders().get(tab.folder_id, [])
+        if tab.index >= len(items):
+            raise ManualReviewRequired("-", ReviewReason.UI_ELEMENT_NOT_FOUND, "the editor tab this run opened is gone")
+        return items[tab.index]
+
+    def editor_title(self, tab: EditorTab) -> str:
+        return str(self.editor_item(tab).element_info.name).lstrip("*")
+
+    def is_dirty(self, tab: EditorTab) -> bool:
+        return str(self.editor_item(tab).element_info.name).startswith("*")
+
+    def activate_editor(self, tab: EditorTab) -> None:
+        self.session.bring_to_front()
+        select_tab_item(self.editor_item(tab))
+
+    def editor_pane(self, tab: EditorTab) -> Any:
+        """Only the ACTIVE editor's controls exist in the UIA tree, so after activating our tab the
+        pane named after it is ours even when another (hidden) editor has the same title."""
+        self.activate_editor(tab)
+        return self.content_pane(self.editor_title(tab))
+
+    def save_editor(self, tab: EditorTab) -> None:
+        """Toolbar Save, exactly once, then wait until THIS editor loses its dirty marker '*'."""
+        self.activate_editor(tab)
+        self.press(self.find("main", "save"))
+        wait_until(
+            lambda: not self.is_dirty(tab),
+            timeout=self.settings.timeouts.dialog,
+            what=f"'{self.editor_title(tab)}' to be saved",
+        )
 
     def content_pane(self, title: str) -> Any:
         """The Pane named after an editor/view tab holds that editor's controls (verified: 'New Order')."""
