@@ -33,6 +33,7 @@ class FakturamaApp:
             MasterDataListScreen(ctx, "documents", "documents_columns"),
             ctx.ui_date_parse_format,
             ctx.selectors.value("lists", "document_type_by_prefix"),
+            ctx.selectors.value("lists", "document_state_by_key"),
         )
         self.invoice = InvoiceEditorScreen(ctx, self.order)
 

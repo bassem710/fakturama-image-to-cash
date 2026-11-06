@@ -115,45 +115,67 @@ def select_tab_item(item: Any) -> None:
 
 def select_combo_option(combo: Any, option: str, *, spec_step: str, field_name: str) -> None:
     """Select the ComboBox entry whose text equals `option` after normalization (Fakturama pads some
-    options with spaces, e.g. 'Credit transfer '), then verify the selection."""
+    options with spaces, e.g. 'Credit transfer '), then verify the selection.
+
+    Found live (run #15): SelectionItem.Select() on an option changes the combo's TEXT but fires no
+    SWT Selection event, so Fakturama's data binding keeps the old value: a Product was saved with
+    VAT 'Tax-free' while its editor showed 'VAT 19%'. So the choice is made the way a user makes it:
+    keyboard Up/Down from the current option (fires Selection), else a click on the option element
+    inside the expanded dropdown (element-relative, never a fixed point)."""
     if normalize_text(read_value(combo)) == normalize_text(option):
         return
-    exact = [o for o in combo_options(combo) if normalize_text(o) == normalize_text(option)]
+    options = combo_options(combo)
+    exact = [i for i, o in enumerate(options) if normalize_text(o) == normalize_text(option)]
     if len(exact) != 1:
         raise ManualReviewRequired(
             spec_step, ReviewReason.UI_ELEMENT_NOT_FOUND, f"{field_name}: {len(exact)} options named {option!r}"
         )
-    _select_list_item(combo, exact[0])
+    target = exact[0]
+    shown = normalize_text(read_value(combo))
+    current = next((i for i, o in enumerate(options) if normalize_text(o) == shown), None)
+    if current is not None:
+        combo.set_focus()
+        keyboard.send_keys(("{DOWN}" if target > current else "{UP}") * abs(target - current), pause=0.03)
+    if normalize_text(read_value(combo)) != normalize_text(option):
+        _click_list_item(combo, options[target])
     observed = read_value(combo)
-    if normalize_text(observed) != normalize_text(option):  # pattern did not commit: pywinauto select
-        combo.select(exact[0])
-        observed = read_value(combo)
     if normalize_text(observed) != normalize_text(option):
         raise ManualReviewRequired(
             spec_step, ReviewReason.VALUE_MISMATCH, f"{field_name}: wanted {option!r}, shows {observed!r}"
         )
 
 
-def _select_list_item(combo: Any, name: str) -> None:
-    """SelectionItem pattern on the option itself; pywinauto's own select() only as a fallback."""
+def _click_list_item(combo: Any, name: str) -> None:
+    """Expand, then click the option's own UIA element (the dropdown closes on the click)."""
     combo.expand()
-    try:
-        item = next((i for i in combo.descendants(control_type="ListItem") if i.element_info.name == name), None)
-        if item is not None:
-            with contextlib.suppress(Exception):
-                item.iface_selection_item.Select()
-                return
-    finally:
+    item = next((i for i in combo.descendants(control_type="ListItem") if i.element_info.name == name), None)
+    if item is None:
         with contextlib.suppress(Exception):
             combo.collapse()
-    combo.select(name)
+        return
+    item.click_input()
 
 
 def set_checkbox(checkbox: Any, checked: bool, *, spec_step: str, field_name: str) -> None:
+    """Toggle pattern, then element click; each followed by a short poll. Found live (run #24, the
+    Invoice 'paid' box): the toggle state reads stale for a moment after a successful Toggle()."""
+
     def state() -> bool:
         return bool(checkbox.iface_toggle.CurrentToggleState)
 
-    if state() != checked:
-        checkbox.iface_toggle.Toggle()
-    if state() != checked:
+    def settled() -> bool:
+        deadline = time.monotonic() + 1.0
+        while time.monotonic() < deadline:
+            if state() == checked:
+                return True
+            time.sleep(0.05)
+        return state() == checked
+
+    if state() == checked:
+        return
+    checkbox.iface_toggle.Toggle()
+    if settled():
+        return
+    checkbox.click_input()  # element-relative fallback
+    if not settled():
         raise ManualReviewRequired(spec_step, ReviewReason.VALUE_MISMATCH, f"{field_name} did not toggle")

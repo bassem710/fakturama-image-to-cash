@@ -3,13 +3,14 @@ except the Items grid columns (OCR, see config/selectors.yaml)."""
 
 from __future__ import annotations
 
+import time
 from datetime import date
 from functools import partial
 from typing import Any
 
 from pywinauto import keyboard
 
-from imagetocash.automation.date_input import set_cdatetime
+from imagetocash.automation.date_input import has_keyboard_focus, set_cdatetime
 from imagetocash.automation.input import (
     escape_send_keys,
     read_value,
@@ -101,7 +102,24 @@ class OrderEditorScreen:
             )
             edit = next(iter(folder.descendants(control_type="Edit")), None)
             texts[role] = read_value(edit) if edit is not None else ""
+        self._select_address_tab(pane, next(iter(tabs.values())))
         return texts
+
+    def _select_address_tab(self, pane: Any, tab_name: str) -> None:
+        """Leave the FIRST address tab (Invoice address) selected, as the editor had it. Found live
+        (run #21, Fakturama 2.2.0 DocumentEditor.doSave line 412): Save looks up the address binding
+        of the SELECTED address tab, which exists only for the tab that was selected when the Debtor
+        was applied; with 'Delivery address' left selected, Save throws a NullPointerException and
+        the Order stays unsaved."""
+        item = next((t for t in pane.descendants(control_type="TabItem") if t.element_info.name == tab_name), None)
+        if item is None:
+            raise ManualReviewRequired("4.4", ReviewReason.UI_ELEMENT_NOT_FOUND, f"{tab_name} tab")
+        item.click_input()
+        wait_until(
+            partial(_tab_folder_named, pane, tab_name),
+            timeout=self._ctx.settings.timeouts.element,
+            what=f"{tab_name} tab",
+        )
 
     # --- 3.13-3.16 Items grid (custom-drawn NatTable -> OCR inside its UIA rectangle) ------------------
     def read_item_lines(self) -> list[dict[str, str]]:
@@ -123,14 +141,33 @@ class OrderEditorScreen:
         }
         order = self._item_order()
         table = self._items_table()
-        for field, value in wanted.items():
-            if record.get(field) and _same_number(record[field], value):
-                continue  # 3.14: "set or confirm"
-            table.set_focus()
-            keys = "^{HOME}" + "{DOWN}" * line_index + "{RIGHT}" * order.index(field)
-            keyboard.send_keys(keys, pause=0.02)
-            keyboard.send_keys(escape_send_keys(value) + "{ENTER}", pause=0.03)  # typing opens the cell editor
+
+        def wrong(rec: dict[str, str]) -> list[str]:
+            return [f for f, v in wanted.items() if not (rec.get(f) and _same_number(rec[f], v))]
+
+        # Found live (run #19): on the first edit after a new line, leading navigation keys can be
+        # lost, so a value lands in an EARLIER column (U.Price typed into Qty.). So every pass edits
+        # the fields still wrong and then re-reads the WHOLE line; a second pass repairs, else stop.
+        for _pass in range(2):
+            for field in wrong(record):  # 3.14: "set or confirm"
+                table.set_focus()
+                wait_until(lambda: has_keyboard_focus(table), timeout=2, what="Items table focus")
+                time.sleep(0.2)  # run #16: keys sent right after the focus change were dropped
+                # Run #18: Fakturama can leave a cell editor open; keys then go INTO it and it hides
+                # the table. Escape first (no edit in progress) and after the commit.
+                keys = "{ESC}^{HOME}" + "{DOWN}" * line_index + "{RIGHT}" * order.index(field)
+                keyboard.send_keys(keys, pause=0.05)
+                keyboard.send_keys(escape_send_keys(wanted[field]) + "{ENTER}", pause=0.05)  # opens the editor
+                keyboard.send_keys("{ESC}", pause=0.05)
             self._ctx.invalidate()
+            lines = self.read_item_lines()
+            record = dict(lines[line_index]) if line_index < len(lines) else {}  # short read: not verified
+            if not wrong(record):
+                break
+        if still := wrong(record):
+            raise ManualReviewRequired(
+                "3.13", ReviewReason.VALUE_MISMATCH, f"{item.sku}: {', '.join(still)} not set after 2 passes"
+            )
         if not _same_number(record.get("vat", ""), str(item.vat_percent)):
             raise ManualReviewRequired(
                 "3.14",

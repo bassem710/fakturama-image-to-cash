@@ -41,7 +41,9 @@ order_editor:
   total: {by: properties, control_type: Edit, name: "Total"}
   follow_up_invoice: {by: properties, control_type: Button, name: "Invoice"}
   address_tabs: {invoice: "Invoice address", delivery: "Delivery address"}
-  items_order: [position, quantity, sku, picture, name, description, vat, unit_price, discount, price]
+  # Copy order (seen live): the row-number column is NatTable's row header, not copied and not a
+  # keyboard cell, so Ctrl+Home lands on Qty. VAT copies as the record's toString (taxValue: [0.19]).
+  items_order: [quantity, sku, picture, name, description, vat, unit_price, discount, price]
   items_columns:                        # OCR header text -> field (not yet seen with data)
     "Item No.": sku
     "Qty.": quantity
@@ -72,6 +74,8 @@ lists:
   payment_columns: {"Name": name, "Description": description}
   documents_columns: {"Document": number, "Date": date, "Name": customer, "Cust.Ref.": reference, "State": state, "Total": total}
   document_type_by_prefix: {"PO": order, "IN": invoice}
+  # The State column copies the key of its state ICON (iconset.properties), not a word (seen live).
+  document_state_by_key: {COMMAND_ORDER_PENDING: open, COMMAND_ORDER_PROCESSING: processing, COMMAND_ORDER_SHIPPED: shipped, COMMAND_CHECKED: paid, COMMAND_UNCHECKED: open}
 
 debtor_editor:
   company: {by: properties, control_type: Edit, name: "Company"}

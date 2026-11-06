@@ -15,6 +15,8 @@ from typing import Any
 import win32clipboard
 from pywinauto import keyboard
 
+from imagetocash.automation.date_input import has_keyboard_focus
+
 _SENTINEL = "\x00imagetocash-empty\x00"
 
 
@@ -54,7 +56,13 @@ def copy_table(table: Any, timeout: float = 1.5) -> list[list[str]] | None:
     try:
         _set_text(_SENTINEL)
         table.set_focus()
-        keyboard.send_keys("^a^c", pause=0.02)
+        # Found live (run #20): keys sent right after the focus change can be dropped; a lost Ctrl+A
+        # copies only the selected row. So wait for real keyboard focus and let it settle first.
+        focus_deadline = time.monotonic() + 2.0
+        while not has_keyboard_focus(table) and time.monotonic() < focus_deadline:
+            time.sleep(0.05)
+        time.sleep(0.15)
+        keyboard.send_keys("^a^c", pause=0.05)
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             text = None

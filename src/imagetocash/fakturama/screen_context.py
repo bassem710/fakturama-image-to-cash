@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
@@ -251,6 +252,8 @@ class ScreenContext:
             if not self.tables.has_data_rows(ScreenRect.of(table), expected_headers=tuple(columns)):
                 return []
             copied = copy_table(table)
+            if copied is None and self._acknowledge_empty_copy_error():
+                return []
             # Fakturama copies some hidden columns after the visible ones (seen in Select the address):
             # the configured fields are the leading columns, extra trailing cells are ignored.
             if copied is not None and all(len(row) >= len(order) for row in copied):
@@ -266,6 +269,28 @@ class ScreenContext:
             if copied:
                 get_logger().warning(f"table copy had an unexpected shape ({len(copied[0])} cells), using OCR")
         return self._read_table_ocr(table, columns)
+
+    def _acknowledge_empty_copy_error(self) -> bool:
+        """Found live (run #17): a filter still being applied can empty the list between the OCR look
+        and Ctrl+C, and Fakturama then reports 'Internal Error ... copiedCells is null'. That exact
+        error comes from our own copy of an EMPTY table and changes no data: acknowledge it with OK and
+        treat the table as empty. Any other Internal Error still stops the run."""
+        for dialog in self.session.dialogs():
+            if dialog.element_info.name != "Internal Error":
+                continue
+            texts = " ".join(t.element_info.name for t in dialog.descendants(control_type="Text"))
+            if "copiedCells" not in texts:
+                return False
+            self.press(next(b for b in dialog.descendants(control_type="Button") if b.element_info.name == "OK"))
+            wait_until(
+                lambda: all(d.element_info.name != "Internal Error" for d in self.session.dialogs()),
+                timeout=self.settings.timeouts.dialog,
+                what="the copy error to close",
+            )
+            get_logger().info("empty table: acknowledged Fakturama's empty-copy error")
+            self.invalidate()
+            return True
+        return False
 
     def _read_table_ocr(self, table: Any, columns: Mapping[str, str]) -> list[dict[str, str]]:
         last: list[OcrTable] = []
@@ -301,8 +326,15 @@ class ScreenContext:
         return value.strftime(self.settings.ui_date_format.replace("{day}", str(value.day)))
 
 
+_TAX_VALUE = re.compile(r"\btaxValue: \[([^\]]*)\]")
+
+
 def _fraction_to_percent(raw: str) -> str:
+    """'0.19' -> '19%'. The Items grid copies a whole VAT record ('VAT taxValue: [0.19] ...') and
+    stores a line discount as a NEGATIVE fraction (10% copies as '-0.1'): read as its size."""
+    if found := _TAX_VALUE.search(raw):
+        raw = found.group(1)
     try:
-        return f"{(Decimal(raw) * 100).normalize():f}%"
+        return f"{(abs(Decimal(raw)) * 100).normalize():f}%"
     except InvalidOperation:
         return raw

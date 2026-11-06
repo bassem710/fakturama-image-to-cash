@@ -97,6 +97,15 @@ def test_conflicting_debtor_stops_instead_of_creating_a_duplicate(tmp_path: Path
     assert "debtor.new" not in db.calls
 
 
+def test_product_dialog_applying_a_wrong_single_hit_stops_at_3_3(tmp_path: Path) -> None:
+    # 'Select a product' applies its only filter hit by itself; that hit merely contains the SKU.
+    db = FakeDb(products=[{"sku": "CHR-ERG-010", "name": "Other chair", "gross": "100.00", "vat": "19%"}])
+    outcome = run_once(tmp_path, FakeFakturama(db))
+    assert outcome.exit_code is ExitCode.MANUAL_REVIEW
+    assert outcome.message.startswith("[3.3] conflicting_match")
+    assert "product.new" not in db.calls
+
+
 def test_conflicting_vat_definition_stops_at_3_5(tmp_path: Path) -> None:
     db = FakeDb(vats=[{"name": "VAT 19%", "value": "19%", "code": "Z (Zero rated goods)"}])
     outcome = run_once(tmp_path, FakeFakturama(db))

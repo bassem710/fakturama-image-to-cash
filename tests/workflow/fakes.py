@@ -27,12 +27,20 @@ def _contains(haystack: str, needle: str) -> bool:
 
 
 class FakeSelectionDialog:
-    def __init__(self, rows: list[dict[str, str]], key: str, on_choose, db: FakeDb, name: str) -> None:
+    def __init__(
+        self, rows: list[dict[str, str]], key: str, on_choose, db: FakeDb, name: str, *, auto_apply: bool = False
+    ) -> None:
         self._rows, self._key, self._on_choose, self._db, self._name = rows, key, on_choose, db, name
+        self._auto_apply, self.auto_applied = auto_apply, False
 
     def search(self, text: str) -> list[dict[str, str]]:
         self._db.calls.append(f"{self._name}.search:{text}")
-        return [dict(r) for r in self._rows if _contains(r.get(self._key, ""), text)]
+        hits = [dict(r) for r in self._rows if any(_contains(v, text) for v in r.values())]
+        if self._auto_apply and len(hits) == 1:  # like Fakturama's 'Select a product': applies, closes
+            self.auto_applied = True
+            self._on_choose(hits[0])
+            return []
+        return [r for r in hits if _contains(r.get(self._key, ""), text)]
 
     def choose(self, row) -> None:
         self._db.calls.append(f"{self._name}.choose")
@@ -100,7 +108,7 @@ class FakeOrderEditor:
                 }
             )
 
-        return FakeSelectionDialog(self.db.products, "sku", choose, self.db, "product_dialog")
+        return FakeSelectionDialog(self.db.products, "sku", choose, self.db, "product_dialog", auto_apply=True)
 
     def read_item_lines(self) -> list[dict[str, str]]:
         return [dict(line) for line in self.lines]

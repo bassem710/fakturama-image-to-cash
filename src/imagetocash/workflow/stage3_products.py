@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
-from imagetocash.domain.matching import PRODUCT_MATCH_POLICY, VAT_MATCH_POLICY, normalize_text, vat_name_for
+from imagetocash.domain.matching import (
+    PRODUCT_MATCH_POLICY,
+    VAT_MATCH_POLICY,
+    normalize_ocr_text,
+    normalize_text,
+    vat_name_for,
+)
 from imagetocash.domain.models import LineItem
 from imagetocash.domain.pricing import gross_master_price
 from imagetocash.domain.review import ManualReviewRequired, ReviewReason
@@ -45,8 +51,12 @@ class ProductsStage:
             dialog = order_ui.open_product_selector()
 
         with ev.spec_step("3.3", f"[{item.sku}] Search the exact SKU") as rec:
-            row = decide(self._product_policy, wanted, dialog.search(item.sku), "3.3")
-            if row is None:
+            rows = dialog.search(item.sku)
+            row: Row | None
+            if dialog.auto_applied:
+                row = self._auto_applied_line(line_index, item, "3.3")
+                rec.observed = "the dialog applied its only hit; Items line has the exact SKU"
+            elif (row := decide(self._product_policy, wanted, rows, "3.3")) is None:
                 dialog.cancel()
                 rec.observed = "no exact SKU -> Cancel, create the Product"
             else:
@@ -54,11 +64,11 @@ class ProductsStage:
                 rec.observed = "exact SKU selected -> OK"
 
         if row is None:
-            row = self._create_product(ctx, item)
+            row = self._create_product(ctx, line_index, item)
         ctx.product_rows[item.sku] = row
         self._complete_line(ctx, line_index, item)
 
-    def _create_product(self, ctx: RunContext, item: LineItem) -> Row:
+    def _create_product(self, ctx: RunContext, line_index: int, item: LineItem) -> Row:
         ev, ui = ctx.evidence, self._ui
         vat_name = vat_name_for(item.vat_percent)
         wanted_vat = {"name": vat_name, "value": str(item.vat_percent), "code": STANDARD_RATE_CODE}
@@ -99,10 +109,25 @@ class ProductsStage:
         with ev.spec_step("3.12", f"[{item.sku}] Back on the Order: select the new Product") as rec:
             ui.order.activate()
             dialog = ui.order.open_product_selector()
-            row = require_exact(self._product_policy, {"sku": item.sku}, dialog.search(item.sku), "3.12")
-            dialog.choose(row)
+            rows = dialog.search(item.sku)
+            if dialog.auto_applied:
+                row = self._auto_applied_line(line_index, item, "3.12")
+            else:
+                row = require_exact(self._product_policy, {"sku": item.sku}, rows, "3.12")
+                dialog.choose(row)
             rec.observed = "new Product selected"
         return row
+
+    def _auto_applied_line(self, line_index: int, item: LineItem, spec_step: str) -> Row:
+        """'Select a product' applies its only filter hit by itself. That hit may merely CONTAIN the
+        SKU (e.g. in its description), so the new Items line must carry the exact SKU, else stop."""
+        lines = self._ui.order.read_item_lines()
+        sku = lines[line_index].get("sku", "") if line_index < len(lines) else ""
+        if normalize_ocr_text(sku) != normalize_ocr_text(item.sku):  # OCR only if the copy failed
+            raise ManualReviewRequired(
+                spec_step, ReviewReason.CONFLICTING_MATCH, f"dialog applied {sku!r}, expected {item.sku!r}"
+            )
+        return dict(lines[line_index])
 
     def _complete_line(self, ctx: RunContext, line_index: int, item: LineItem) -> None:
         ev, order_ui = ctx.evidence, self._ui.order

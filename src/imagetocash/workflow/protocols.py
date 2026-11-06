@@ -21,7 +21,9 @@ Row = Mapping[str, str]
 class SelectionDialogUi(Protocol):
     """'Select the address' / 'Select a product' dialogs opened from the Order (2.2-2.3, 3.3, 3.12)."""
 
-    def search(self, text: str) -> Sequence[Row]: ...  # types the search, waits until the list is stable
+    auto_applied: bool  # True when the dialog applied its only filter hit itself (Select a product does)
+
+    def search(self, text: str) -> Sequence[Row]: ...  # sets the search, waits until the list is stable
     def choose(self, row: Row) -> None: ...  # selects the row and clicks OK
     def cancel(self) -> None: ...
 

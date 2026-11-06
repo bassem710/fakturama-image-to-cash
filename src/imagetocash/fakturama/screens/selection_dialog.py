@@ -4,14 +4,22 @@ No coordinates: the search box is set through UIA (read back), rows are read fro
 clipboard (OCR only as fallback), and the matched row is double-clicked inside the list element
 (the one pointer exception, see automation/row_choice.py); OK through Invoke if the dialog stays.
 The caller verifies the effect (addresses populated / a new Items line), as the spec requires.
+
+Found live (run #14, 3.3): 'Select a product' filters on every keystroke over all columns and, as
+soon as exactly ONE row is left, applies it and closes by itself. Typing 'CHR-ERG-01' closed it at
+'CH' and added an unrelated product (its description contained 'ch'). So the search text is set in
+ONE modify event (ValuePattern.SetValue, which SWT's filter does receive; a filter box has no data
+binding, unlike editor fields), and a dialog that closes on its own is reported as `auto_applied`
+for the caller to verify (the new Items line must carry the exact SKU).
 """
 
 from __future__ import annotations
 
+import time
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from imagetocash.automation.input import set_and_verify
+from imagetocash.automation.input import read_value
 from imagetocash.automation.locators import locate
 from imagetocash.automation.row_choice import choose_row_with_pointer
 from imagetocash.automation.waiting import WaitTimeout
@@ -19,6 +27,7 @@ from imagetocash.domain.review import ManualReviewRequired, ReviewReason
 from imagetocash.fakturama.screen_context import ScreenContext
 
 S = "selection_dialogs"
+AUTO_APPLY_GRACE = 0.6  # s: the dialog closes right after its filter leaves one row
 
 
 class SelectionDialogScreen:
@@ -28,14 +37,28 @@ class SelectionDialogScreen:
         self._ctx, self._dialog, self._title = ctx, dialog, title
         self._columns, self._order = columns, order
         self._rows: list[dict[str, str]] = []
+        self.auto_applied = False  # Fakturama applied its only filter hit and closed the dialog
 
     def search(self, text: str) -> list[dict[str, str]]:
         search_box = locate(self._dialog, self._ctx.selectors.locator(S, "search"))
-        set_and_verify(search_box, text, spec_step="-", field_name=f"{self._title} search")
+        search_box.iface_value.SetValue(text)  # one modify event: no prefix can auto-apply a wrong row
+        deadline = time.monotonic() + AUTO_APPLY_GRACE
+        while time.monotonic() < deadline:
+            if not self._is_open():
+                self.auto_applied = True
+                self._ctx.invalidate()
+                return []
+            time.sleep(0.05)
+        shown = read_value(search_box)
+        if shown != text:
+            raise ManualReviewRequired(
+                "-", ReviewReason.VALUE_MISMATCH, f"{self._title} search: set {text!r}, field shows {shown!r}"
+            )
         self._rows = self._ctx.read_table_rows(self._table(), self._columns, self._order)
         return [dict(record) for record in self._rows]
 
     def choose(self, row: Mapping[str, str]) -> None:
+        self._require_open()
         index = next((i for i, record in enumerate(self._rows) if record == dict(row)), None)
         if index is None:
             raise ManualReviewRequired("-", ReviewReason.UI_ELEMENT_NOT_FOUND, f"row vanished from {self._title}")
@@ -49,8 +72,18 @@ class SelectionDialogScreen:
         self._ctx.invalidate()
 
     def cancel(self) -> None:
+        self._require_open()
         self._ctx.press(locate(self._dialog, self._ctx.selectors.locator(S, "cancel")))
         self._ctx.session.wait_for_dialog_closed(self._title, self._ctx.settings.timeouts.dialog)
 
     def _table(self) -> Any:
         return self._ctx.table_in(self._dialog)
+
+    def _is_open(self) -> bool:
+        return any(d.element_info.name == self._title for d in self._ctx.session.dialogs())
+
+    def _require_open(self) -> None:
+        if self.auto_applied:
+            raise ManualReviewRequired(
+                "-", ReviewReason.VALUE_MISMATCH, f"{self._title} applied a record by itself; nothing to choose"
+            )
