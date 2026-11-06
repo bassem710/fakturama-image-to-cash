@@ -80,12 +80,22 @@ class DesktopSession:
 
         return wait_until(probe, timeout=timeout, what=f"dialog '{title}'")
 
+    def raise_if_app_error(self) -> None:
+        """Fakturama reports internal failures in an 'Internal Error' dialog: stop, never click on."""
+        if any(d.element_info.name == "Internal Error" for d in self.dialogs()):
+            raise AppInternalError("Fakturama showed an 'Internal Error' dialog")
+
     def wait_for_dialog_closed(self, title: str, timeout: float) -> None:
+        self.raise_if_app_error()
         wait_until(
             lambda: all(d.element_info.name != title for d in self.dialogs()),
             timeout=timeout,
             what=f"dialog '{title}' to close",
         )
+
+
+class AppInternalError(RuntimeError):
+    pass
 
 
 def _try_connect(app: Application, exe_name: str) -> bool:

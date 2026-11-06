@@ -228,6 +228,14 @@ class OcrTableReader:
     def __init__(self, ocr: WindowsScreenOcr) -> None:
         self._ocr = ocr
 
+    def has_data_rows(self, rect: ScreenRect, expected_headers: Sequence[str] = ()) -> bool:
+        """Any text below the header row? (One OCR pass, read-only.)"""
+        rows = group_into_rows(self._ocr.read_words(rect))
+        if not rows:
+            return False
+        header = find_header_row(rows, expected_headers) if expected_headers else 0
+        return len(rows) > header + 1
+
     def read(self, rect: ScreenRect, expected_headers: Sequence[str] = ()) -> OcrTable:
         image = self._ocr.capture(rect)
         words = self._ocr.read_image(image, rect)

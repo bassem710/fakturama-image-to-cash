@@ -246,6 +246,10 @@ class ScreenContext:
         skip one). If the copy is empty or has a different shape, read it with OCR inside the table's
         UIA rectangle instead (read-only)."""
         if order:
+            # Found live: Ctrl+C on an EMPTY NatTable makes Fakturama show an 'Internal Error' dialog
+            # (NullPointerException). So a quick read-only look first: no data rows -> no copy.
+            if not self.tables.has_data_rows(ScreenRect.of(table), expected_headers=tuple(columns)):
+                return []
             copied = copy_table(table)
             if copied is not None and all(len(row) == len(order) for row in copied):
                 records = []

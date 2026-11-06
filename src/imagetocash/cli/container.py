@@ -40,9 +40,21 @@ def new_run_dir(settings: Settings) -> Path:
 
 def screenshot_main_window(path: Path) -> None:
     """Screen capture as compressed PNG (local runs/ only; contains order data, git-ignored)."""
+    import win32gui
     from PIL import ImageGrab
 
-    ImageGrab.grab(all_screens=True).save(path, optimize=False, compress_level=1)
+    handles: list[int] = []
+
+    def collect(hwnd: int, _: object) -> bool:
+        if win32gui.IsWindowVisible(hwnd) and win32gui.GetWindowText(hwnd).startswith("Fakturama -"):
+            handles.append(hwnd)
+        return True
+
+    win32gui.EnumWindows(collect, None)
+    if not handles:
+        return
+    left, top, right, bottom = win32gui.GetWindowRect(handles[0])
+    ImageGrab.grab(bbox=(left, top, right, bottom), all_screens=True).save(path, compress_level=1)
 
 
 def build_runner(settings: Settings, from_json: Path | None, model: str | None) -> tuple[ImageToCashRunner, Path]:
