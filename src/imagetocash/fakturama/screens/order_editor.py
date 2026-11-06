@@ -14,7 +14,6 @@ from imagetocash.automation.input import (
     escape_send_keys,
     read_value,
     select_combo_option,
-    select_tab_item,
     set_and_verify,
 )
 from imagetocash.automation.locators import largest_leaf_pane
@@ -94,7 +93,7 @@ class OrderEditorScreen:
             item = next((t for t in pane.descendants(control_type="TabItem") if t.element_info.name == tab_name), None)
             if item is None:
                 continue
-            select_tab_item(item)
+            item.click_input()  # Select() reports success here without switching (seen live)
             folder = wait_until(
                 partial(_tab_folder_named, pane, tab_name),
                 timeout=self._ctx.settings.timeouts.element,
