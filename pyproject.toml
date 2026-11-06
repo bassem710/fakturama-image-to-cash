@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "imagetocash"
+version = "0.1.0"
+description = "Fakturama Image-to-Cash automation: order image -> verified Order + linked Invoice via UI Automation, OCR and an LLM."
+requires-python = ">=3.12"
+dependencies = [
+    "pywinauto>=0.6.8",
+    "comtypes>=1.4",
+    "anthropic>=0.40",
+    "pydantic>=2.7",
+    "typer>=0.12",
+    "structlog>=24.1",
+    "pyyaml>=6.0",
+    "pillow>=10.3",
+    "mss>=9.0",
+    "winocr>=0.0.13",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.2", "ruff>=0.5", "mypy>=1.10", "types-PyYAML"]
+
+[project.scripts]
+imagetocash = "imagetocash.cli.main:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["ui: needs a running Fakturama (deselect with -m 'not ui')"]
+addopts = "-m 'not ui'"
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
+ignore = ["RUF001", "RUF002", "RUF003"]
+
+[tool.mypy]
+python_version = "3.12"
+packages = ["imagetocash"]
+mypy_path = "src"
+ignore_missing_imports = true
+warn_unused_ignores = true
