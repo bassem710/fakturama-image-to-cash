@@ -45,17 +45,20 @@ the current editor or dialog:
 2. **By label anchor:** find the label text, take the next field of the wanted type in tree order.
 3. **By order inside a labeled group:** "the upper icon beside Addresses" = the first image, top to bottom,
    in the Addresses label's container. This is how the spec itself describes the controls.
-4. **By OCR inside a UIA rectangle:** for custom-drawn lists, capture only the rectangle UIA reports, run
-   Windows OCR, build columns from the header row, and click rows at the positions OCR measured. A
-   vision-model locator exists as a last resort and is off by default.
+4. **Custom-drawn lists (NatTable)** are read with their own key binding: Ctrl+A / Ctrl+C copies the
+   raw values as tab-separated text, exact and fast. OCR inside the list's UIA rectangle is only the
+   fallback when a copy has an unexpected shape. Grid cells are edited by keyboard (Ctrl+Home, Down,
+   Right by column index).
 
-No coordinate is ever written in code or config; every click point comes from UIA or from OCR at
-runtime. Labels and names live in a selector file, so a UI change is a config edit. The session addresses
+No coordinate is ever written in code or config. The one pointer action is the double-click that
+Fakturama's selection dialogs require to apply a row, at a point measured inside the list element at
+run time (`fakturama/row_choice.py`). Labels and names live in a selector file, so a UI change is a config edit. The session addresses
 the main window by handle and restores it when minimized, because criteria-based lookups miss minimized
 SWT windows.
 
-Waits are explicit: poll for a condition with a timeout, never a fixed sleep. "List stabilized" (2.2) means
-two consecutive identical reads.
+Waits are explicit: poll for a condition with a timeout. The one deliberate pause is a short settle after a
+focus change, because SWT widgets drop keystrokes sent too early (measured; `automation/waiting.settle`).
+"List stabilized" (2.2) means two consecutive identical reads.
 
 ## 4. Image extraction
 
@@ -100,8 +103,17 @@ the annotated-screenshot deliverable.
 | Stop rather than guess | Safe; every stop is explained and traceable | Some runs end early by design |
 | Keyboard and typing over programmatic set | App logic runs exactly as for a user | Depends on focus; the session forces the window to the front |
 
-## 8. Risks and what is left
+## 8. Data integrity across runs
 
-The custom-drawn grid editing gesture, the date widget's typed input, and the second-address UI for a
-separate delivery address are the largest unknowns; each is isolated in one screen object and fails into a
-clear manual-review stop rather than a wrong record.
+Master data is never duplicated: every Debtor, Product, VAT rate and payment method is searched first and
+created only when no exact match exists. Documents are guarded too: before step 1.3 the run searches Data >
+Documents for the External Reference (step 1.2.1, read-only). One matching Order + Invoice means "already
+processed" (nothing changed, exit 0); anything partial or different stops for manual review. A run never
+books the same order twice.
+
+## 9. Risks and what is left
+
+Partial earlier work (an Order without its Invoice) stops for review instead of being resumed, and the
+VAT code of a pre-existing rate is not opened (the list hides it). Both fail into a clear manual-review
+stop or a logged gap rather than a wrong record. Fakturama behaviours found during the live runs are listed
+with their handling in [control-map.md](control-map.md), under Gotchas.

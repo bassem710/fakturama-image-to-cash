@@ -1,3 +1,5 @@
+"""Record match policies: exact, ambiguous, conflicting, OCR-tolerant comparisons."""
+
 from decimal import Decimal as D
 
 import pytest

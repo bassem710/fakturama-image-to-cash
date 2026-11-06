@@ -1,3 +1,5 @@
+"""Masking and redaction: no order value reaches the console, logs or reports."""
+
 import logging
 from pathlib import Path
 

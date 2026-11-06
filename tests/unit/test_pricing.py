@@ -1,3 +1,5 @@
+"""Decimal price math: line price, gross master price, rounding."""
+
 from decimal import Decimal as D
 
 from imagetocash.domain.pricing import gross_master_price, line_net_price, round_money

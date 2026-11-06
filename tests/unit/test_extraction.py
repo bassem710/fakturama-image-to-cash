@@ -1,3 +1,5 @@
+"""Extraction parsing: amounts, dates and the mapping of a saved extraction to the order model."""
+
 from datetime import date
 from decimal import Decimal as D
 from pathlib import Path

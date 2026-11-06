@@ -1,3 +1,5 @@
+"""NatTable clipboard copy parsing (tab-separated raw values, 'null' cells)."""
+
 from imagetocash.automation.clipboard_table import parse_rows
 
 

@@ -1,71 +1,80 @@
 # Fakturama 2.2.0 control map (UI Automation discovery)
 
-How each control in the flow is reached. Built with `imagetocash inspect` (pywinauto, `backend="uia"`)
-on Windows 11, 1920×1080, Fakturama 2.2.0 (Eclipse RCP / SWT 3.124), en_US locale.
+How each control in the flow is reached, and what Fakturama does that is not obvious. Built with
+`imagetocash inspect` (pywinauto, `backend="uia"`) on Windows 11, Fakturama 2.2.0 (Eclipse RCP / SWT),
+en_US locale. Every name below lives in [`config/selectors.yaml`](../config/selectors.yaml); code only
+refers to keys.
 
-Legend: **UIA** = found by UIA properties · **Label** = unnamed control found next to its label ·
-**Order** = unnamed control told apart by its order inside a labeled UIA container · **OCR** = custom-drawn,
-read with Windows OCR inside the UIA rectangle · **?** = not yet discovered (needs a live pass).
+Legend: **UIA** = found by UIA properties · **Label** = unnamed control found after its label ·
+**Order** = unnamed control told apart by its order inside a labeled container · **Copy** = custom-drawn
+NatTable list read by its own Ctrl+A / Ctrl+C binding (OCR inside the UIA rectangle only as a fallback).
 
 ## Session facts
 | Fact | Consequence |
 |---|---|
-| Main window: class `SWT_Window0`, title `Fakturama - <workspace>` | Found via `Application.windows()` by class, then addressed by **handle**. Criteria lookups (`title_re`/`class_name`) fail when the window is minimized. |
-| Window may be minimized / behind other apps | Session restores, maximizes and focuses it before every stage. |
-| Locale en_US: dates `Nov 6, 2026`, money `$0.00` | Date typed as `%b %-d, %Y`; amounts parsed with `parse_amount` (ignores `$`). Configurable in `config/settings.yaml`. |
+| Main window: class `SWT_Window0`, title `Fakturama - <workspace>` | Found once by class through `Application.windows()`, then addressed by **handle**: criteria lookups miss a minimized SWT window. |
+| Only the ACTIVE editor's controls exist in the UIA tree | Always activate this run's editor tab before locating its fields (`fakturama/workbench.py`). |
+| A UIA `FindAll` walks SWT's whole tree (~0.4 s on the main window), `FindFirst` stops at the first hit (~0.01 s) | Named lookups use `find_first`; an editor's tab item and pane are kept once found (`automation/locators.py`, `workbench.py`). |
+| Locale en_US: dates `Nov 6, 2026`, money `$0.00` | Formats in `config/settings.yaml`; values parsed in `fakturama/values.py`. |
+| A fresh, empty database refuses a New Order ("No default value found for Shippings") | Test resets restore Fakturama's own backup taken right after first setup (`imagetocash reset-workspace --yes`). |
 
-## Main window (verified)
+## Main window
 | Spec | Control | How | Selector |
 |---|---|---|---|
-| 1.3 | Toolbar **Order** | UIA | `Button` name `Create: New Order` (Invoke) |
-| 2.11, 3.6, 3.11, 4.4, 5.4 | Toolbar **Save** | UIA | `Button` name `Save the current contents` (Invoke) |
-| 2.5 | New panel **New Contact** | UIA | `Text` name `New Contact` in `Navigation View` (no Invoke → click its UIA rect) |
-| 3.7 | New panel **New product** | UIA | `Text` name `New product` in `Navigation View` |
-| 2.10.1 / 3.4 / 4.5 | **Data** menu | UIA | `MenuBar` `Application` → `MenuItem` `Data` (ExpandCollapse) |
-| – | Navigation **Documents / VATs / terms of payment** | UIA | `Text` items in `Navigation View` (same targets as the Data menu) |
-| – | Editor tabs | UIA | `TabItem` name = editor title (`New Order`, …), SelectionItem pattern |
+| 1.3 | Toolbar **Order** | UIA | `Button` `Create: New Order` (Invoke) |
+| 2.11, 3.6, 3.11, 4.4, 5.4 | Toolbar **Save** | UIA | `Button` `Save the current contents` (Invoke) |
+| 2.5 | New panel **New Contact** | UIA | `Text` `New Contact` (no pattern: element click); toolbar `SplitButton` `Create a new contact` as fallback |
+| 3.7 | New panel **New product** | UIA | `Text` `New product`; toolbar `Create a new product` as fallback |
+| 1.2.1, 2.10.1, 3.4, 4.5 | **Data** menu | UIA | `MenuItem` `Data` (ExpandCollapse) → `MenuItem` view title (Invoke) |
+| – | Editor / view tabs | UIA | `TabItem` named after the title (`*` prefix = unsaved) |
 
-## Order editor (verified, tab `New Order`)
+## Order editor (tab `New Order`, renamed to the number on Save)
 | Spec | Field | How | Selector / notes |
 |---|---|---|---|
-| 1.4 | **No.** | Label | `Edit` after `Text` `No.` → value `PO000001` |
-| 1.5 | **Date** | Label | `Edit` (inside CDateTime pane) after `Text` `Date` → value `Nov 6, 2026` |
-| 1.7 | Price mode | Label/Order | unnamed `ComboBox` right of Date, value `Gross` → set `Net` |
-| 1.7 | VAT mode | UIA | `ComboBox` name `VAT` (in header), value `With VAT` |
-| 1.6 | **Cust.Ref.** | UIA | `Edit` name `Cust.Ref.` |
-| 2.1 | Select existing contact | Order | 1st (upper) `Image` in the container of `Text` `Addresses` |
-| – | New contact (+), **never used** | Order | 2nd (lower) `Image` in the same container |
-| 2.4, 2.13 | Invoice / Delivery address | UIA | `Tab` named after the address role, inner multi-line `Edit` (Value) |
-| 3.2 | Select product | Order | 1st (upper) `Image` in the container of `Text` `Items` |
-| 3.13–3.16 | Items grid | OCR | NatTable pane right of `Items` (opaque in UIA) |
-| 4.2 | Discount | UIA | `Edit` name `Discount` (`0%`) |
-| 4.2 | Shipping | UIA | `ComboBox` name `Shipping` (`Free of shipping costs`) + unnamed `Edit` value (`$0.00`) |
-| 4.3 | Total Net / VAT / Total | UIA | `Edit` names `Total Gross`→(`Total Net` in Net mode), `VAT`, `Total` |
-| 4.6 | Follow-up **Invoice** | UIA | `Group` `Create a follow-up document` → `Button` `Invoice` (Invoke) |
+| 1.4 | **No.** | Label | `Edit` after `No.` |
+| 1.5 | **Date** | Label | CDateTime `Edit` after `Date`: entered by keyboard (see Gotchas) |
+| 1.7 | Price mode | Label | unnamed `ComboBox` after `Date` → `Net` |
+| 1.7 | VAT mode | UIA | `ComboBox` `VAT`, stays `With VAT` |
+| 1.6 | **Cust.Ref.** | UIA | `Edit` `Cust.Ref.` |
+| 2.1 | Select existing contact | Order | 1st (upper) `Image` beside `Addresses`; the 2nd (green +) is never used |
+| 2.4, 2.13 | Invoice / Delivery address | UIA | `TabItem`s `Invoice address` / `Delivery address`; content = multi-line `Edit` |
+| 3.2 | Select product | Order | 1st (upper) `Image` beside `Items` |
+| 3.13–3.16 | Items grid | Copy | NatTable right of `Items`; edited by keyboard (see Gotchas) |
+| 4.2 | Discount / Shipping | UIA | `Edit` `Discount`; `ComboBox` `Shipping` (`Free of shipping costs`) |
+| 4.3 | Totals | UIA | `Edit`s `Total Net` (or `Total Gross`), `VAT`, `Total` |
+| 4.6 | Follow-up **Invoice** | UIA | `Button` `Invoice` in `Create a follow-up document` (Invoke) |
 
-## Lists and dialogs (verified 2026-11-06)
+## Lists, dialogs, other editors
 | Spec | Screen | How |
 |---|---|---|
-| 2.2–2.3, 2.12 | **Select the address**: top-level `#32770` window | Search = Edit after `Search:`; OK / Cancel = Buttons (Invoke); list = custom-drawn pane (scrollbar children only) → OCR. Columns **No., First Name, Name, Company, ZIP, City**, headers **centred** → columns from grid lines. Narrow columns truncate with `...` → prefix match. |
-| 3.3, 3.12 | **Select a product**: same layout | Columns **Item No., Name, Description, Stock, Price, VAT** (left-aligned). |
-| 2.5–2.9 | **New Debtor** editor | Company = Edit `Company`; `First Name Last Name` label → 2 Edits (nth 0/1). Tabs Addresses / Miscellaneous / Notice. Addresses → `Main address` tab: `additional name`, `Street`, `ZIP - City` (2 Edits), `Country` combo, `E-Mail`, `Telephone`; `+` adds `additional address #1` (same fields). Roles: Button after `address type` opens a popup (child `#32770` pane of the main window) with CheckBoxes **Invoice address** / **Delivery address** (Toggle). |
-| 2.9–2.10 | Debtor **Miscellaneous** tab | `Alias name`, `Discount`, `Net or Gross` (`---`/Net/Gross), **`Payment`** combo (lists payment-method *descriptions*). |
-| 2.10.1–2.10.2 | **terms of payment** list | Columns Standard, Name, Description, Discount, Disc. Days, Net Days; green + = Button `Create a new term of payment`. |
-| 2.10.3–2.10.6 | **New Term of Payment** editor | `Name`, `Description`, `Account`; payment code combo is named **`!editorPaymentPaymentcode!`** (Fakturama's untranslated key). Options are space-padded (`'Credit transfer '`). Cash discount / Discount Days / Net Days default to 0. |
-| 3.4–3.5 | **VATs** list | Columns Standard, Name, Description, Value; **no VAT code column** → the matching row is opened (double-click), `VAT code (E-Invoice)` read, editor closed (Ctrl+W). Green + = `Create a new tax rate`. |
-| 3.6 | **New TAX Rate** editor | `Name`, `Description`, `VAT code (E-Invoice)` (default `S (Standard rate)`), `Value` (`0%`), `Set as standard` (never clicked). |
-| 3.7–3.11 | **New product** editor | `Item Number`, `Name`, `Description` (multi-line), `Price (gross)` / `cost price (net)` = Edits after labels, `VAT` combo (lists VAT *descriptions*), `Stock`. |
-| 4.5, 5.5 | **Documents** list | Icon-only type column, then **Document, Date, Name, Cust.Ref., State, Total, Printed**; type derived from the number prefix (`PO…` = Order). |
-| 5.1–5.3 | Invoice editor | Same as the Order editor plus `Service date`, `Order Date`; **`paid` CheckBox** → payment-method combo after it; when ticked: `at` (date) and `Value`. Follow-up group: Delivery, Invoice Correction, Dunning (never used). |
+| 2.2–2.3, 2.12 | **Select the address** (top-level `#32770`) | Search = `Edit` after `Search:`; list copies **No., First Name, Name, Company, ZIP, City** (+3 hidden columns, ignored). |
+| 3.3, 3.12 | **Select a product** | Same layout; copies **Item No., Name, Description, Stock, Price, VAT**. |
+| 2.5–2.9 | **New Debtor** | `Company`; `First Name Last Name` label → 2 `Edit`s. Addresses → `Main address`: `additional name`, `Street`, `ZIP - City` (2 `Edit`s), `Country`, `E-Mail`, `Telephone`; `+` adds `additional address #1`. Roles: button after `address type` opens a popup window with CheckBoxes `Invoice address` / `Delivery address`. |
+| 2.9–2.10 | Debtor **Miscellaneous** | `Alias name`, `Discount`, `Net or Gross`, `Payment` (lists payment-method descriptions). |
+| 2.10.1–2.10.6 | **terms of payment** + **New Term of Payment** | List copies Standard, Name, Description, Discount, Disc. Days, Net Days. Payment code combo is named `!editorPaymentPaymentcode!` (untranslated key); options are space-padded (`'Credit transfer '`). |
+| 3.4–3.6 | **VATs** + **New TAX Rate** | List copies Standard, Name, Description, Value (a fraction); no VAT code column. Editor: `Name`, `Description`, `VAT code (E-Invoice)`, `Value`. |
+| 3.7–3.11 | **New product** | `Item Number`, `Name`, `Description`, `Price (gross)` / `cost price (net)` (after labels), `VAT` combo, `Stock`. |
+| 1.2.1, 4.5, 5.5 | **Documents** | Copies type icon, **Document, Date, Name, Cust.Ref., State, Total, Printed**. Type from the number prefix (`PO`, `IN`). |
+| 5.1–5.3 | Invoice editor | Order layout plus `Service date`, `Order Date`; `paid` CheckBox → method combo; once ticked: `at` (CDateTime) and `Value`. |
 
 ## Gotchas found live
-| Behavior | Handling |
-|---|---|
-| `SelectionItem.Select()` on SWT tabs either raises "Member not found" or returns without switching the editor | `select_tab_item`: verify `IsSelected`, else click the tab's UIA rectangle |
-| Hidden editors' content is absent from the UIA tree | Always activate the editor tab before locating its fields |
-| Company and Description Edits are multi-line: Tab inserts a tab character | No commit key when typing; read-back compares exactly (ends trimmed only) |
-| Nebula CDateTime ignores UIA `SetValue` (reverts on focus loss) and edits one field at a time | `date_input.set_cdatetime`: probe the selected field with Up/Down, move with Right, type zero-padded digits year→month→day, verify after focus leaves |
-| Windows OCR reads the list's `%` as `0/0` | `fix_ocr_percent` before parsing / comparing |
-| Windows OCR confuses O/0 and I/1 in codes (`CHR-ERG-OI`) | OCR-tolerant comparison on both sides |
-| Combo options carry trailing spaces | Select the option whose normalized text matches, by its exact name |
-| **"Save Parts" dialog (closing dirty editors): the checkbox state is NOT readable through UIA/MSAA** | Never close dirty editors programmatically; the run saves each editor once via the toolbar, as the spec says |
+| # | Behavior | Handling (where) |
+|---|---|---|
+| 1 | `SelectionItem.Select()` on SWT tabs raises or returns without switching | `select_tab_item`: verify `IsSelected`, else click the tab element (`automation/input.py`) |
+| 2 | `ValuePattern.SetValue` changes an editor field's text but **not** Fakturama's data binding (a Debtor was saved without its company) | Editor fields are **typed** and read back (`set_and_verify`). SetValue is used only for the selection-dialog search box, which has no binding |
+| 3 | `SelectionItem.Select()` on a dropdown option changes the text but fires no SWT event: the old value is saved (a Product saved as VAT *Tax-free*) | Options chosen by keyboard Up/Down from the current option, else a click on the option element (`select_combo_option`) |
+| 4 | Multi-line Edits insert a tab character on Tab | No commit key when typing; read-back compares exactly |
+| 5 | Nebula CDateTime reverts a `SetValue`; Tab into it selects the first part; typed digits move on by themselves | Focus the previous field, Tab, confirm focus through UIA, type `MMDDYYYY`, leave, verify (`automation/date_input.py`) |
+| 6 | **Select a product** applies its row by itself as soon as its filter leaves exactly one (typing `CHR-ERG-01` applied an unrelated product at `CH`) | Search set in one event; a dialog that closes alone is `auto_applied` and the new Items line must carry the exact SKU (`selection_dialog.py`, stage 3) |
+| 7 | The selection dialogs apply a row only on a mouse double-click (keyboard + OK applies nothing) | The one pointer exception: double-click inside the list element at a point measured at run time (`fakturama/row_choice.py`) |
+| 8 | NatTable copy: no header, raw values, `null` for empty; VAT as a fraction; the Items grid copies a whole VAT record (`taxValue: [0.19]`) and a line discount as a **negative** fraction (`-0.1` = 10 %); the row-number column is not copied | `fakturama/values.py`, `items_order` in selectors.yaml |
+| 9 | Ctrl+C on an **empty** NatTable shows "Internal Error … copiedCells is null" | A quick OCR look first where a list may be empty; that exact error is acknowledged as "empty", any other Internal Error stops the run (`fakturama/tables.py`) |
+| 10 | Keys sent right after a focus change can be dropped (a lost Ctrl+A copies one row; a lost Right puts U.Price into Qty.) | `focus()` waits for UIA focus and settles; Items edits re-read the whole line and repair once, else stop |
+| 11 | Fakturama can leave a grid cell editor open; keys then go into it and the table vanishes from UIA | Escape before and after each cell edit |
+| 12 | **Order Save fails** (NullPointerException in `DocumentEditor.doSave`) while the *Delivery address* tab is selected | Reading the addresses ends with *Invoice address* selected again (`order_editor.read_address_texts`) |
+| 13 | Documents **State** copies the key of its icon (`COMMAND_ORDER_PENDING`, `COMMAND_CHECKED`), **Date** copies Java's date text | Mapped to `open` / `paid` (selectors.yaml) and ISO dates (`values.iso_date`) |
+| 14 | A checkbox's Toggle state reads stale for a moment after Toggle (Invoice `paid`); the Debtor role popup's state never reads right | `set_checkbox` polls; roles are verified through the `address type` field instead |
+| 15 | A payment method created while a Debtor editor is open never appears in that editor's Payment combo | The method is created before New Contact (2.10.1–2.10.6, then 2.5) |
+| 16 | The New panel entry sometimes only re-focuses an open "new" editor | After 4 s without a new tab, the toolbar button (logged as a warning) |
+| 17 | OCR fallback: `%` read as `0/0`; O/0 and I/1 confused in codes | `fix_ocr_percent`; confusable-tolerant comparison on both sides |
+| 18 | "Save Parts" (closing dirty editors): checkbox state not readable | Editors are never closed by the run; each is saved once with the toolbar |

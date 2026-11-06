@@ -10,7 +10,7 @@ Turn one order image into a saved, verified Order and linked Invoice inside the 
 - **Create the Invoice only from the saved Order's "Create a follow-up document" area,** never from the top toolbar.
 - **Stop for manual review on ambiguity.** Multiple or conflicting matches, totals that don't add up, a missing payment method on the Invoice, or a created record that doesn't reappear in its selector → stop, log why, take a screenshot, exit non-zero. Never guess.
 - **Never invent data.** If the image lacks a value, leave the field at its default. Only mark an Invoice paid when the extracted status is PAID, using the extracted payment date and the full Invoice total.
-- **Safe to re-run:** a second run must not create duplicate Debtors, Products, VAT rates or payment methods.
+- **Safe to re-run:** a second run must not create duplicate Debtors, Products, VAT rates or payment methods, and must never book the same order twice (duplicate guard, step 1.2.1: verify and finish "already processed", or stop for review).
 - **Click Save once** per editor, as the spec says.
 
 ## Money and data

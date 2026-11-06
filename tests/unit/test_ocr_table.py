@@ -1,3 +1,5 @@
+"""OCR table reader (the fallback for lists): headers, columns, rows from OCR words."""
+
 from imagetocash.automation.ocr_table import build_table
 from imagetocash.automation.screen_ocr import OcrWord
 from imagetocash.domain.matching import PRODUCT_MATCH_POLICY, ExactMatch

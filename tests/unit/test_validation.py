@@ -1,3 +1,5 @@
+"""Extraction validation: line totals, net/VAT/gross and payment date must add up."""
+
 import dataclasses
 from decimal import Decimal as D
 
