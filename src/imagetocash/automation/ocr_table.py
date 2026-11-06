@@ -20,6 +20,7 @@ from imagetocash.domain.matching import normalize_text
 @dataclass(frozen=True)
 class OcrTableRow:
     cells: dict[str, str]
+    middle_y: float = 0.0  # screen y of the row's text (used only by automation/row_choice.py)
 
     def __hash__(self) -> int:
         return hash(tuple(sorted(self.cells.items())))
@@ -175,7 +176,7 @@ def build_table(
             for word in row:
                 if (column := title_of.get(interval(word))) is not None:
                     cells[column].append(word.text)
-            table_rows.append(OcrTableRow({k: " ".join(v) for k, v in cells.items()}))
+            table_rows.append(OcrTableRow({k: " ".join(v) for k, v in cells.items()}, middle_y=row[0].middle_y))
         return OcrTable(columns=tuple(columns), rows=tuple(table_rows))
 
     columns = _merge_header(header, header_gap)
@@ -186,7 +187,7 @@ def build_table(
         for word in row:
             starts = [i for i, left in enumerate(lefts) if left - slack <= word.left]
             cells[columns[starts[-1] if starts else 0][0]].append(word.text)
-        table_rows.append(OcrTableRow({k: " ".join(v) for k, v in cells.items()}))
+        table_rows.append(OcrTableRow({k: " ".join(v) for k, v in cells.items()}, middle_y=row[0].middle_y))
     return OcrTable(columns=tuple(columns), rows=tuple(table_rows))
 
 

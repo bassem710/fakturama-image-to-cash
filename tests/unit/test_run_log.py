@@ -55,3 +55,15 @@ def test_step_logs_and_files_are_redacted(tmp_path: Path, caplog: pytest.LogCapt
             assert secret not in text
     assert "1.6" in caplog.text and "OK" in caplog.text
     assert "manual review" in caplog.text
+
+
+def test_redact_address_repr_with_empty_value_first() -> None:
+    # The exact shape that leaked in run #13 (an empty '' before the Address repr).
+    message = (
+        "Invoice address on screen '' lacks street, zip, city of Address(name='Northstar Office GmbH', "
+        "street='Friedrichstrasse 88', zip_code='10117', city='Berlin', country='Germany', "
+        "address_specification=None, district=None)"
+    )
+    cleaned = redact(message)
+    for secret in ("Northstar", "Friedrichstrasse", "10117", "Berlin", "Germany"):
+        assert secret not in cleaned

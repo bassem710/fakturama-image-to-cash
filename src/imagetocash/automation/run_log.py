@@ -16,7 +16,10 @@ from pathlib import Path
 
 LOGGER_NAME = "imagetocash"
 
-_QUOTED = re.compile(r"(?P<q>['\"])(?P<v>(?:(?!(?P=q)).){1,200})(?P=q)")
+# One quote style at a time, shortest match, empty values included: "'' lacks ... name='X'" must
+# mask '' and 'X' separately (seen live: a greedy pairing left the real value in clear text).
+_QUOTED = re.compile(r"'(?P<v1>[^'\n]{0,300}?)'|\"(?P<v2>[^\"\n]{0,300}?)\"")
+_BARE_FIELD = re.compile(r"\b(?P<k>[a-z_]{2,30})=(?!<masked>|')[^,)\s]+")  # name=value without quotes
 _EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 _PHONE = re.compile(r"\+?\d[\d\s/().-]{6,}\d")
 _NUMBER = re.compile(r"(?<![A-Za-z])\d[\d.,]*")
@@ -35,7 +38,8 @@ def mask(value: object) -> str:
 def redact(text: object) -> str:
     """Mask quoted values, emails, phone numbers and numbers inside a free-text message."""
     out = str(text or "")
-    out = _QUOTED.sub(lambda m: f"'{mask(m.group('v'))}'", out)
+    out = _QUOTED.sub(lambda m: f"'{mask(m.group('v1') if m.group('v1') is not None else m.group('v2'))}'", out)
+    out = _BARE_FIELD.sub(lambda m: f"{m.group('k')}=<masked>", out)
     out = _EMAIL.sub("<email>", out)
     out = _PHONE.sub("<phone>", out)
     return _NUMBER.sub("#", out)
