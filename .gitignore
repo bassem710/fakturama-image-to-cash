@@ -7,7 +7,5 @@ __pycache__/
 .ruff_cache/
 .env
 runs/
-
-# Generated tool output (graphify knowledge graph, archify diagram runs)
 graphify-out/
 .archify/
