@@ -39,7 +39,7 @@ def load_settings(path: Path) -> Settings:
     return Settings(
         fakturama_exe=Path(raw["fakturama_exe"]),
         runs_dir=Path(raw.get("runs_dir", "runs")),
-        model=extraction.get("model", "gemini-flash-latest"),
+        model=extraction.get("model", "gemini-flash-lite-latest"),
         fallback_models=tuple(extraction.get("fallback_models", [])),
         source_date_formats=tuple(extraction.get("source_date_formats", ["%Y-%m-%d"])),
         ui_date_format=ui.get("date_format", "%b {day}, %Y"),

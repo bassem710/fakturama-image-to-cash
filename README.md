@@ -26,7 +26,8 @@ inside UI Automation rectangles. No hardcoded coordinates: every target comes fr
    .venv\Scripts\python -m pip install -e ".[dev]"
    ```
 4. Copy `.env.example` to `.env` and set `GEMINI_API_KEY` (Google AI Studio). The model is
-   `extraction.model` in `config/settings.yaml` (default `gemini-flash-latest`, with fallbacks).
+   `extraction.model` in `config/settings.yaml` (default `gemini-flash-lite-latest`; on an overload the
+   next model in `fallback_models` is tried after one retry).
 
 ## Run
 

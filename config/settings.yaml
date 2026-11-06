@@ -7,8 +7,10 @@ workspace:                        # `imagetocash reset-workspace --yes` (test ru
   backups_dir: "C:/fakturama-backups"
 
 extraction:
-  model: "gemini-flash-latest"    # Google AI Studio model id (alias of the current Gemini Flash); override with --model
-  fallback_models: ["gemini-3.8-flash", "gemini-flash-lite-latest", "gemini-3.8-flash-lite"]   # tried in order if a model stays overloaded (429/5xx)
+  # Google AI Studio model ids; override with --model. Flash-Lite first: on 2026-11-06 the Flash models
+  # answered only with overload errors (several minutes per run) while Flash-Lite answered in ~4 s.
+  model: "gemini-flash-lite-latest"
+  fallback_models: ["gemini-3.8-flash-lite", "gemini-flash-latest", "gemini-3.8-flash"]   # tried in order if a model stays overloaded (429/5xx)
   source_date_formats: ["%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y"]
 
 ui:

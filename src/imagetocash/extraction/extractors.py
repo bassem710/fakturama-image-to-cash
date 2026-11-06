@@ -38,12 +38,18 @@ RETRYABLE_STATUS = (429, 500, 502, 503, 504)
 NEXT_MODEL_STATUS = (*RETRYABLE_STATUS, 404)  # 404: model retired or not offered to this key
 
 
+# Per model: one retry, then the next model. Measured: an overloaded model answers 503 only after a long
+# wait, so 4 attempts x 60 s cost ~3 minutes per model, while a healthy call takes 4-20 s.
+ATTEMPTS_PER_MODEL = 2
+REQUEST_TIMEOUT_MS = 45_000
+
+
 def gemini_client() -> genai.Client:
-    """Reads GEMINI_API_KEY; retries rate limits and overloads with exponential backoff."""
+    """Reads GEMINI_API_KEY; retries a rate limit or overload once, then the caller tries the next model."""
     retry = types.HttpRetryOptions(
-        attempts=4, initial_delay=2.0, max_delay=20.0, http_status_codes=list(RETRYABLE_STATUS)
+        attempts=ATTEMPTS_PER_MODEL, initial_delay=1.0, max_delay=5.0, http_status_codes=list(RETRYABLE_STATUS)
     )
-    return genai.Client(http_options=types.HttpOptions(timeout=60_000, retry_options=retry))
+    return genai.Client(http_options=types.HttpOptions(timeout=REQUEST_TIMEOUT_MS, retry_options=retry))
 
 
 class OrderExtractor(Protocol):
@@ -55,7 +61,7 @@ class GeminiVisionOrderExtractor:
     ExtractedOrder, which the SDK parses into the pydantic model."""
 
     def __init__(
-        self, client: genai.Client, model: str = "gemini-flash-latest", fallback_models: Sequence[str] = ()
+        self, client: genai.Client, model: str = "gemini-flash-lite-latest", fallback_models: Sequence[str] = ()
     ) -> None:
         self._client = client
         self._models = (model, *fallback_models)
