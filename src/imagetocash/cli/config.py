@@ -28,11 +28,14 @@ class Settings:
     ocr_language: str
     timeouts: Timeouts
     selectors_path: Path
+    workspace_dir: Path | None = None
+    clean_backup: Path | None = None
+    backups_dir: Path | None = None
 
 
 def load_settings(path: Path) -> Settings:
     raw: dict[str, Any] = yaml.safe_load(path.read_text(encoding="utf-8"))
-    extraction, ui = raw.get("extraction", {}), raw.get("ui", {})
+    extraction, ui, workspace = raw.get("extraction", {}), raw.get("ui", {}), raw.get("workspace", {})
     return Settings(
         fakturama_exe=Path(raw["fakturama_exe"]),
         runs_dir=Path(raw.get("runs_dir", "runs")),
@@ -43,4 +46,11 @@ def load_settings(path: Path) -> Settings:
         ocr_language=ui.get("ocr_language", "en"),
         timeouts=Timeouts(**ui.get("timeouts", {})),
         selectors_path=path.parent / "selectors.yaml",
+        workspace_dir=_optional_path(workspace.get("dir")),
+        clean_backup=_optional_path(workspace.get("clean_backup")),
+        backups_dir=_optional_path(workspace.get("backups_dir")),
     )
+
+
+def _optional_path(value: str | None) -> Path | None:
+    return Path(value) if value else None

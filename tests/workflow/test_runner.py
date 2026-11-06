@@ -49,33 +49,81 @@ def test_clean_workspace_creates_master_data_and_finishes(tmp_path: Path) -> Non
     ]
     assert ui.invoice.payment == {"paid": "true", "date": "2026-07-18", "value": "$678.30", "method": "Bank Transfer"}
     steps = steps_of(tmp_path)
-    assert steps[:8] == ["1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8"]
+    assert steps[:9] == ["1.1", "1.2", "1.2.1", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8"]
     assert "2.12" in steps and "2.4" not in steps  # creation branch, then reselect from the Order
     assert steps.count("3.6") == 1 and steps.count("3.12") == 2  # VAT created once, both products reselected
     assert steps[-1] == "5.7"
     assert "order.follow_up_invoice" in db.calls  # 4.6 uses the follow-up area
 
 
-def test_second_run_selects_existing_master_data(tmp_path: Path) -> None:
+def test_second_run_of_the_same_order_changes_nothing(tmp_path: Path) -> None:
     ui = FakeFakturama()
     run_once(tmp_path, ui, name="first")
+    calls_before = list(ui.db.calls)
     outcome = run_once(tmp_path, ui, name="second")
+
+    assert outcome.exit_code is ExitCode.DONE, outcome.message
+    assert outcome.message.startswith("Already processed: Order PO000001 and Invoice IN000001")
+    assert [d["number"] for d in ui.db.documents] == ["PO000001", "IN000001"]  # not booked twice
+    new_calls = ui.db.calls[len(calls_before) :]
+    assert all(c.startswith("documents.") for c in new_calls), new_calls  # read-only: no editor touched
+    assert steps_of(tmp_path, "second") == ["1.1", "1.2", "1.2.1"]
+
+
+def test_new_order_of_a_known_customer_selects_existing_master_data(tmp_path: Path) -> None:
+    ui = FakeFakturama()
+    run_once(tmp_path, ui, name="first")
+    outcome = run_once(tmp_path, ui, write_variant(tmp_path, external_reference="WEB-2026-0715-B02"), "second")
 
     assert outcome.exit_code is ExitCode.DONE, outcome.message
     db = ui.db
     assert len(db.debtors) == 1 and len(db.products) == 2 and len(db.vats) == 1 and len(db.payment_methods) == 1
-    # A second Order + Invoice is expected (the spec has no duplicate-order guard); 4.5/5.5 find
-    # the rows by their generated numbers, so the earlier documents do not confuse the checks.
     assert [d["number"] for d in db.documents] == ["PO000001", "IN000001", "PO000002", "IN000002"]
     steps = steps_of(tmp_path, "second")
     assert "2.4" in steps and "2.5" not in steps and "3.4" not in steps
 
 
-def test_ambiguous_debtor_stops_at_2_3(tmp_path: Path) -> None:
+def _booked(tmp_path: Path) -> FakeFakturama:
     ui = FakeFakturama()
     run_once(tmp_path, ui, name="first")
-    ui.db.debtors.append(dict(ui.db.debtors[0]))  # duplicate Debtor
+    return ui
+
+
+def test_order_booked_without_invoice_stops_without_changes(tmp_path: Path) -> None:
+    ui = _booked(tmp_path)
+    ui.db.documents = [d for d in ui.db.documents if d["type"] == "Order"]
     outcome = run_once(tmp_path, ui, name="second")
+    assert outcome.exit_code is ExitCode.MANUAL_REVIEW
+    assert outcome.message.startswith("[1.2.1] already_booked_partial")
+    assert len(ui.db.documents) == 1
+
+
+def test_order_booked_twice_stops(tmp_path: Path) -> None:
+    ui = _booked(tmp_path)
+    ui.db.documents.append(dict(ui.db.documents[0], number="PO000009"))
+    outcome = run_once(tmp_path, ui, name="second")
+    assert outcome.message.startswith("[1.2.1] conflicting_match")
+
+
+def test_booked_order_with_another_total_stops(tmp_path: Path) -> None:
+    ui = _booked(tmp_path)
+    for document in ui.db.documents:
+        document["total"] = "$1.00"
+    outcome = run_once(tmp_path, ui, name="second")
+    assert outcome.message.startswith("[1.2.1] conflicting_match")
+
+
+def test_unpaid_invoice_for_a_paid_order_stops(tmp_path: Path) -> None:
+    ui = _booked(tmp_path)
+    next(d for d in ui.db.documents if d["type"] == "Invoice")["state"] = "open"
+    outcome = run_once(tmp_path, ui, name="second")
+    assert outcome.message.startswith("[1.2.1] already_booked_partial")
+
+
+def test_ambiguous_debtor_stops_at_2_3(tmp_path: Path) -> None:
+    ui = _booked(tmp_path)
+    ui.db.debtors.append(dict(ui.db.debtors[0]))  # duplicate Debtor
+    outcome = run_once(tmp_path, ui, write_variant(tmp_path, external_reference="WEB-2026-0715-B02"), "second")
     assert outcome.exit_code is ExitCode.MANUAL_REVIEW
     assert outcome.message.startswith("[2.3] ambiguous_match")
 

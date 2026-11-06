@@ -1,4 +1,4 @@
-"""Command line: `imagetocash run | extract | inspect`."""
+"""Command line: `imagetocash run | extract | inspect | reset-workspace`."""
 
 from __future__ import annotations
 
@@ -85,6 +85,28 @@ def inspect(
         typer.echo(f"wrote {out}")
     else:
         typer.echo(text)
+
+
+@app.command("reset-workspace")
+def reset_workspace_command(
+    yes: Annotated[bool, typer.Option("--yes", help="Confirm: quit Fakturama and swap its database")] = False,
+    config: ConfigOption = DEFAULT_CONFIG,
+) -> None:
+    """Test runs only: quit Fakturama, MOVE its database into a timestamped backup folder and restore
+    the clean backup from settings.yaml (workspace.clean_backup). Nothing is deleted."""
+    from imagetocash.fakturama.workspace import reset_workspace
+
+    settings = load_settings(config)
+    if not (settings.workspace_dir and settings.clean_backup and settings.backups_dir):
+        typer.echo("settings.yaml has no complete 'workspace' section (dir, clean_backup, backups_dir)")
+        raise typer.Exit(1)
+    if not yes:
+        typer.echo(f"This quits Fakturama and moves {settings.workspace_dir / 'Database'} aside. Re-run with --yes.")
+        raise typer.Exit(1)
+    moved_to = reset_workspace(
+        settings.fakturama_exe, settings.workspace_dir, settings.clean_backup, settings.backups_dir
+    )
+    typer.echo(f"Old database moved to {moved_to}; clean database restored.")
 
 
 if __name__ == "__main__":

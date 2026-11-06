@@ -8,6 +8,7 @@ class ReviewReason(StrEnum):
     TOTALS_MISMATCH = "totals_mismatch"
     AMBIGUOUS_MATCH = "ambiguous_match"
     CONFLICTING_MATCH = "conflicting_match"
+    ALREADY_BOOKED_PARTIAL = "already_booked_partial"  # this order is in Fakturama, but incomplete
     CREATED_RECORD_NOT_FOUND = "created_record_not_found"
     VALUE_MISMATCH = "value_mismatch"
     UNSUPPORTED_PAYMENT_METHOD = "unsupported_payment_method"

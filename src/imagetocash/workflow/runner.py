@@ -1,4 +1,5 @@
-"""One continuous Order-first run: spec 1.1 -> 5.7. Exit codes: 0 done, 2 manual review, 1 error."""
+"""One continuous Order-first run: spec 1.1 -> 5.7, guarded against booking an order twice (1.2.1).
+Exit codes: 0 done or already processed, 2 manual review, 1 error."""
 
 from __future__ import annotations
 
@@ -17,6 +18,7 @@ from imagetocash.extraction.extractors import OrderExtractor
 from imagetocash.extraction.mapper import to_order_document
 from imagetocash.workflow.context import RunContext
 from imagetocash.workflow.protocols import FakturamaUi
+from imagetocash.workflow.stage0_guard import AlreadyBookedGuard
 from imagetocash.workflow.stage1_open_order import OpenOrderStage
 from imagetocash.workflow.stage2_debtor import DebtorStage
 from imagetocash.workflow.stage3_products import ProductsStage
@@ -77,6 +79,15 @@ class ImageToCashRunner:
             order = self._extract_and_validate(image_path)
             ui = self._connect_ui()
             ctx = RunContext(order=order, evidence=self._evidence)
+            existing = AlreadyBookedGuard(ui).run(ctx)
+            if existing is not None:
+                report = self._evidence.write_report("ALREADY PROCESSED: nothing changed")
+                return RunOutcome(
+                    ExitCode.DONE,
+                    report,
+                    f"Already processed: Order {existing.order_number} and Invoice {existing.invoice_number}"
+                    " verified, nothing changed",
+                )
             stages: tuple[Stage, ...] = (
                 OpenOrderStage(ui),
                 DebtorStage(ui),

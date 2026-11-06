@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from dataclasses import dataclass
 from decimal import Decimal
 
-from imagetocash.domain.matching import normalize_ocr_text, normalize_percent
-from imagetocash.domain.models import Address, LineItem
+from imagetocash.domain.matching import normalize_ocr_text, normalize_percent, normalize_text
+from imagetocash.domain.models import Address, LineItem, OrderDocument
 from imagetocash.domain.pricing import amounts_match, line_net_price
 from imagetocash.domain.review import ManualReviewRequired, ReviewReason
 from imagetocash.extraction.parsing import ParseError, parse_amount
@@ -54,3 +56,75 @@ def check_item_line(row: Row, item: LineItem, spec_step: str) -> None:
     check_amount(item.discount_percent, row.get("discount", "0"), spec_step, f"{item.sku} Discount")
     expected_price = line_net_price(item.quantity, item.unit_net_price, item.discount_percent)
     check_amount(expected_price, row.get("price", ""), spec_step, f"{item.sku} line Price")
+
+
+@dataclass(frozen=True)
+class ExistingBooking:
+    """The Order and Invoice an earlier run (or a person) already booked for this order."""
+
+    order_number: str
+    invoice_number: str
+
+
+def classify_existing(rows: Sequence[Row], order: OrderDocument, spec_step: str) -> ExistingBooking | None:
+    """Duplicate guard (added to the spec, read-only): what does Fakturama already hold for this
+    External Reference?
+
+    - nothing -> None: book it (1.3-5.7).
+    - exactly one Order and one Invoice that match the image (total, customer, states) ->
+      ExistingBooking: already processed, change nothing.
+    - anything else (Order without Invoice, two Orders, another total or customer) -> manual
+      review, change nothing: a person decides, the run never books the order a second time.
+    The Documents search is a substring match over all columns, so rows are filtered here on the
+    exact Cust.Ref."""
+    wanted = normalize_ocr_text(order.external_reference)
+    same = [r for r in rows if normalize_ocr_text(r.get("reference", "")) == wanted]
+    if not same:
+        return None
+    orders = [r for r in same if normalize_text(r.get("type", "")) == "order"]
+    invoices = [r for r in same if normalize_text(r.get("type", "")) == "invoice"]
+    others = len(same) - len(orders) - len(invoices)
+    if len(orders) != 1 or len(invoices) > 1 or others:
+        raise ManualReviewRequired(
+            spec_step,
+            ReviewReason.CONFLICTING_MATCH,
+            f"Cust.Ref. already used by {len(orders)} Order(s), {len(invoices)} Invoice(s), {others} other document(s)",
+        )
+    if not invoices:
+        raise ManualReviewRequired(
+            spec_step,
+            ReviewReason.ALREADY_BOOKED_PARTIAL,
+            f"Order {orders[0].get('number')!r} has no Invoice",
+        )
+    order_row, invoice_row = orders[0], invoices[0]
+    for kind, row in (("Order", order_row), ("Invoice", invoice_row)):
+        _check_existing_row(row, order, kind, spec_step)
+    _check_state(order_row, "open", "Order", spec_step)
+    _check_state(invoice_row, "paid" if order.payment.is_paid else "open", "Invoice", spec_step)
+    return ExistingBooking(order_row.get("number", ""), invoice_row.get("number", ""))
+
+
+def _check_existing_row(row: Row, order: OrderDocument, kind: str, spec_step: str) -> None:
+    try:
+        total = parse_amount(row.get("total", ""))
+    except ParseError:
+        total = None
+    if total is None or not amounts_match(order.totals.gross, total):
+        raise ManualReviewRequired(
+            spec_step,
+            ReviewReason.CONFLICTING_MATCH,
+            f"{kind} total {row.get('total')!r} != {order.totals.gross}",
+        )
+    customer = row.get("customer")
+    company = order.debtor.company or order.debtor.search_text
+    if customer is not None and normalize_ocr_text(company) not in normalize_ocr_text(customer):
+        raise ManualReviewRequired(
+            spec_step, ReviewReason.CONFLICTING_MATCH, f"existing {kind} customer {customer!r} is not {company!r}"
+        )
+
+
+def _check_state(row: Row, expected: str, kind: str, spec_step: str) -> None:
+    state = normalize_text(row.get("state", ""))
+    if state and state != expected:
+        reason = ReviewReason.ALREADY_BOOKED_PARTIAL if kind == "Invoice" else ReviewReason.CONFLICTING_MATCH
+        raise ManualReviewRequired(spec_step, reason, f"existing {kind} is {state!r}, expected {expected!r}")
