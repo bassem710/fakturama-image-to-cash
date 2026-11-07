@@ -8,7 +8,12 @@ import pytest
 from imagetocash.domain.models import OrderDocument, SourceTotals
 from imagetocash.domain.pricing import gross_master_price
 from imagetocash.domain.review import ManualReviewRequired, ReviewReason
-from imagetocash.domain.validation import ensure_order_is_consistent, find_inconsistencies
+from imagetocash.domain.validation import (
+    ensure_order_is_consistent,
+    ensure_required_fields,
+    find_inconsistencies,
+    required_fields_missing,
+)
 
 
 def test_sample_order_from_pdf_is_consistent(northstar_order: OrderDocument) -> None:
@@ -47,3 +52,41 @@ def test_paid_without_date_is_reported(northstar_order: OrderDocument) -> None:
     unpaid_date = dataclasses.replace(northstar_order.payment, payment_date=None)
     tampered = dataclasses.replace(northstar_order, payment=unpaid_date)
     assert any("payment date" in p for p in find_inconsistencies(tampered))
+
+
+def _blank(order: OrderDocument, field: str) -> OrderDocument:
+    """`order` with one extracted value left blank, as if the image did not show it."""
+    debtor = order.debtor
+    if field == "customer name":
+        return dataclasses.replace(order, debtor=dataclasses.replace(debtor, company="", first_name="", last_name=" "))
+    if field in ("billing country", "delivery city"):
+        which, attr = field.split()
+        address = dataclasses.replace(getattr(debtor, f"{which}_address"), **{attr: ""})
+        return dataclasses.replace(order, debtor=dataclasses.replace(debtor, **{f"{which}_address": address}))
+    first = dataclasses.replace(order.items[0], **{field: ""})
+    return dataclasses.replace(order, items=(first, *order.items[1:]))
+
+
+def test_sample_order_has_every_required_field(northstar_order: OrderDocument) -> None:
+    assert required_fields_missing(northstar_order) == []
+    ensure_required_fields(northstar_order)
+
+
+@pytest.mark.parametrize(
+    ("field", "reported"),
+    [
+        ("customer name", "Company or customer name"),
+        ("billing country", "billing street / ZIP / City / Country"),
+        ("delivery city", "delivery street / ZIP / City / Country"),
+        ("sku", "item 1 SKU"),
+        ("description", "item 1 description"),
+    ],
+)
+def test_blank_required_field_stops_at_1_2(northstar_order: OrderDocument, field: str, reported: str) -> None:
+    order = _blank(northstar_order, field)
+    assert required_fields_missing(order) == [reported]
+    with pytest.raises(ManualReviewRequired) as stop:
+        ensure_required_fields(order)
+    assert stop.value.spec_step == "1.2"
+    assert stop.value.reason is ReviewReason.EXTRACTION_INVALID
+    assert reported in stop.value.detail

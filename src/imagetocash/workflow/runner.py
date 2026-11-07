@@ -11,8 +11,8 @@ from pathlib import Path
 from typing import Protocol
 
 from imagetocash.domain.models import OrderDocument
-from imagetocash.domain.review import ManualReviewRequired, ReviewReason
-from imagetocash.domain.validation import ensure_order_is_consistent
+from imagetocash.domain.review import ManualReviewRequired
+from imagetocash.domain.validation import ensure_order_is_consistent, ensure_required_fields
 from imagetocash.extraction.extractors import OrderExtractor
 from imagetocash.extraction.mapper import DEFAULT_DATE_FORMATS, to_order_document
 from imagetocash.workflow.context import RunContext
@@ -40,23 +40,6 @@ class RunOutcome:
     exit_code: ExitCode
     report: Path
     message: str
-
-
-def required_fields_missing(order: OrderDocument) -> list[str]:
-    """Spec 1.2: the fields the rest of the flow cannot do without."""
-    debtor = order.debtor
-    checks = {
-        "External Reference": order.external_reference,
-        "Company or customer name": debtor.search_text,
-        "billing street / ZIP / City": debtor.billing_address.street
-        and debtor.billing_address.zip_code
-        and debtor.billing_address.city,
-        "Payment Method": order.payment.method,
-        "Paid Status": order.payment.paid_status,
-    }
-    missing = [name for name, value in checks.items() if not value]
-    missing += [f"item {i.position} SKU" for i in order.items if not i.sku]
-    return missing
 
 
 class ImageToCashRunner:
@@ -117,9 +100,7 @@ class ImageToCashRunner:
             ensure_order_is_consistent(order)
             rec.observed = f"{len(order.items)} item(s), total {order.totals.gross} {order.currency}"
         with ev.spec_step("1.2", "All required fields extracted") as rec:
-            missing = required_fields_missing(order)
-            if missing:
-                raise ManualReviewRequired("1.2", ReviewReason.EXTRACTION_INVALID, "missing: " + ", ".join(missing))
+            ensure_required_fields(order)
             rec.observed = json.dumps(
                 {
                     "reference": order.external_reference,

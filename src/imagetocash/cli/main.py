@@ -11,7 +11,7 @@ from imagetocash.automation.run_log import redact
 from imagetocash.cli.container import build_extractor, build_runner
 from imagetocash.config import load_settings
 from imagetocash.domain.review import ManualReviewRequired
-from imagetocash.domain.validation import ensure_order_is_consistent
+from imagetocash.domain.validation import ensure_order_is_consistent, ensure_required_fields
 from imagetocash.extraction.mapper import to_order_document
 
 app = typer.Typer(add_completion=False, help="Fakturama Image-to-Cash automation.")
@@ -57,7 +57,9 @@ def extract(
         out.write_text(payload, encoding="utf-8")
     typer.echo(payload if show_values else redact(payload))
     try:
-        ensure_order_is_consistent(to_order_document(extracted, settings.source_date_formats))
+        order = to_order_document(extracted, settings.source_date_formats)
+        ensure_order_is_consistent(order)
+        ensure_required_fields(order)  # the same 1.2 check `run` does
     except ManualReviewRequired as stop:
         typer.echo(f"MANUAL REVIEW: {redact(str(stop))}")
         raise typer.Exit(2) from stop

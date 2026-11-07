@@ -4,7 +4,7 @@ before Fakturama is touched. The same rules are checked again on screen at 3.16 
 from collections import defaultdict
 from decimal import Decimal
 
-from imagetocash.domain.models import OrderDocument
+from imagetocash.domain.models import Address, OrderDocument
 from imagetocash.domain.pricing import CENT, amounts_match, line_net_price, round_money, vat_amount
 from imagetocash.domain.review import ManualReviewRequired, ReviewReason
 
@@ -50,3 +50,34 @@ def ensure_order_is_consistent(order: OrderDocument) -> None:
     problems = find_inconsistencies(order)
     if problems:
         raise ManualReviewRequired("1.1", ReviewReason.TOTALS_MISMATCH, "; ".join(problems))
+
+
+def _address_complete(address: Address) -> bool:
+    return all(v.strip() for v in (address.street, address.zip_code, address.city, address.country))
+
+
+def required_fields_missing(order: OrderDocument) -> list[str]:
+    """Spec 1.2: the fields the rest of the flow cannot do without (blank = missing)."""
+    debtor = order.debtor
+    checks = {
+        "External Reference": bool(order.external_reference.strip()),
+        "Company or customer name": bool(debtor.search_text.strip()),
+        "billing street / ZIP / City / Country": _address_complete(debtor.billing_address),
+        "Payment Method": bool(order.payment.method.strip()),
+        "Paid Status": bool(order.payment.paid_status.strip()),
+    }
+    if not debtor.billing_equals_delivery:  # a separate delivery address is filled in too (2.7)
+        checks["delivery street / ZIP / City / Country"] = _address_complete(debtor.delivery_address)
+    missing = [name for name, present in checks.items() if not present]
+    for item in order.items:
+        if not item.sku.strip():
+            missing.append(f"item {item.position} SKU")
+        if not item.description.strip():  # becomes the Product name (3.8)
+            missing.append(f"item {item.position} description")
+    return missing
+
+
+def ensure_required_fields(order: OrderDocument) -> None:
+    missing = required_fields_missing(order)
+    if missing:
+        raise ManualReviewRequired("1.2", ReviewReason.EXTRACTION_INVALID, "missing: " + ", ".join(missing))
