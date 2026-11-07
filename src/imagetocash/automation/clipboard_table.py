@@ -3,7 +3,9 @@
 Found live: NatTable's default key bindings copy the selected cells as tab-separated text
 (Ctrl+A selects all, Ctrl+C copies). Values are the raw model values, in display column order,
 without a header row; VAT 19% comes back as 0.19 and empty cells as 'null'.
-The user's clipboard text is restored afterwards.
+The user's clipboard TEXT is restored afterwards. Any other clipboard content (an image, files) is
+lost, and an empty or non-text clipboard is left EMPTY, so the copied list (order data) never stays
+behind.
 """
 
 from __future__ import annotations
@@ -39,6 +41,14 @@ def _set_text(text: str) -> None:
         win32clipboard.CloseClipboard()
 
 
+def _clear() -> None:
+    win32clipboard.OpenClipboard()
+    try:
+        win32clipboard.EmptyClipboard()
+    finally:
+        win32clipboard.CloseClipboard()
+
+
 def parse_rows(text: str) -> list[list[str]]:
     rows = []
     for line in text.replace("\r\n", "\n").split("\n"):
@@ -70,3 +80,5 @@ def copy_table(table: Any, timeout: float = 1.5) -> list[list[str]] | None:
         with contextlib.suppress(Exception):
             if previous is not None:
                 _set_text(previous)
+            else:  # nothing to restore: never leave the copied order data on the clipboard
+                _clear()

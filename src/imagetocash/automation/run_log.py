@@ -19,7 +19,9 @@ LOGGER_NAME = "imagetocash"
 # One quote style at a time, shortest match, empty values included: "'' lacks ... name='X'" must
 # mask '' and 'X' separately (seen live: a greedy pairing left the real value in clear text).
 _QUOTED = re.compile(r"'(?P<v1>[^'\n]{0,300}?)'|\"(?P<v2>[^\"\n]{0,300}?)\"")
-_BARE_FIELD = re.compile(r"\b(?P<k>[a-z_]{2,30})=(?!<masked>|')[^,)\s]+")  # name=value without quotes
+# name=value without quotes: the value runs to the next , ; ) | or line end, so EVERY word of a
+# multi-word value is masked ("city=Frankfurt am Main"), not only the first.
+_BARE_FIELD = re.compile(r"\b(?P<k>[a-z_]{2,30})=(?!<masked>|')[^,;)|\n]+")
 _EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 _PHONE = re.compile(r"\+?\d[\d\s/().-]{6,}\d")
 _NUMBER = re.compile(r"(?<![A-Za-z])\d[\d.,]*")

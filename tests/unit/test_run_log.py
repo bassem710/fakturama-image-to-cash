@@ -80,3 +80,41 @@ def test_step_expected_values_never_reach_the_evidence_files(tmp_path) -> None:
     report = recorder.write_report("DONE")
     for written in (tmp_path / "steps.jsonl", report):
         assert "Northstar" not in written.read_text(encoding="utf-8")
+
+
+MULTI_WORD_ROW = {
+    "company": "Northstar Office GmbH",
+    "first_name": "Anna Maria",
+    "last_name": "Klein",
+    "zip": "60311",
+    "city": "Frankfurt am Main",
+}
+TRAILING_WORDS = ("Office", "GmbH", "Maria", "Main")
+
+
+def test_described_rows_are_masked_whole() -> None:
+    from imagetocash.workflow.resolver import _describe
+
+    cleaned = redact(_describe([MULTI_WORD_ROW]))
+    for word in TRAILING_WORDS:
+        assert word not in cleaned
+
+
+def test_bare_multi_word_values_are_masked_whole() -> None:
+    cleaned = redact("company=Northstar Office GmbH, city=Frankfurt am Main; first_name=Anna Maria")
+    for word in TRAILING_WORDS:
+        assert word not in cleaned
+
+
+def test_stop_listing_other_customers_keeps_them_masked_in_evidence(tmp_path: Path) -> None:
+    from imagetocash.domain.matching import DEBTOR_MATCH_POLICY
+    from imagetocash.workflow.resolver import decide
+
+    evidence = EvidenceRecorder(tmp_path)
+    with pytest.raises(ManualReviewRequired), evidence.spec_step("2.3", "Exact match"):
+        decide(DEBTOR_MATCH_POLICY, MULTI_WORD_ROW, [MULTI_WORD_ROW, dict(MULTI_WORD_ROW)], "2.3")
+    evidence.write_report("MANUAL REVIEW at 2.3")
+    for name in ("report.md", "steps.jsonl"):
+        text = (tmp_path / name).read_text(encoding="utf-8")
+        for word in TRAILING_WORDS:
+            assert word not in text

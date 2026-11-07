@@ -22,7 +22,9 @@ from imagetocash.workflow.protocols import Row
 
 
 def _describe(rows: Sequence[Row]) -> str:
-    return "; ".join(", ".join(f"{k}={v}" for k, v in row.items()) for row in rows[:5])
+    """Rows for a stop reason. Values are QUOTED so redact() masks each one whole (a bare multi-word
+    value such as 'Northstar Office GmbH' would otherwise keep its later words in clear text)."""
+    return "; ".join(", ".join(f"{k}={v!r}" for k, v in row.items()) for row in rows[:5])
 
 
 def decide(policy: RecordMatchPolicy, wanted: Mapping[str, str], rows: Sequence[Row], spec_step: str) -> Row | None:

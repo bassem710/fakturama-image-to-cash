@@ -22,6 +22,10 @@ inside UI Automation rectangles. No hardcoded coordinates: every target comes fr
    `extraction.model` in `config/settings.yaml` (default `gemini-flash-lite-latest`; on an overload the
    next model in `fallback_models` is tried after one retry). Without a key, `--from-json` (below)
    replays a saved extraction.
+5. Privacy on the automation machine: lists are read by copying them to the Windows clipboard, so turn
+   off clipboard history and "Sync across your devices" (Settings > System > Clipboard). Logs and
+   `report.md` are masked, but `runs/<timestamp>/` (screenshots, `extracted.json`) and
+   `imagetocash inspect --out` hold order data in clear text: never share them whole.
 
 ## Run
 
