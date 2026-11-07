@@ -41,6 +41,24 @@ imagetocash inspect --out runs/ui-tree.txt                                      
 imagetocash reset-workspace --yes                                                            # restore the clean test database (moves the old one, never deletes)
 ```
 
+**`imagetocash` is not recognized?** PowerShell prints `The term 'imagetocash' is not recognized as
+the name of a cmdlet...` when the virtual environment is not active in that terminal (each new
+terminal starts without it). Activate it from the project folder, then run again:
+
+```powershell
+.venv\Scripts\Activate.ps1
+```
+
+If PowerShell refuses with "running scripts is disabled on this system", allow scripts for this
+terminal only and activate again:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+```
+
+Or skip activation and call the venv's copy directly: `.venv\Scripts\imagetocash run samples/order-page3.png`.
+If that file does not exist, the install in step 3 did not finish; run it again.
+
 **Exit codes:** `0` done (or already processed) · `2` stopped for manual review · `1` error.
 
 **Results:** every run, pass or fail, writes `runs/<timestamp>/`:
