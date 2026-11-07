@@ -57,6 +57,24 @@ class Workbench:
             what="the new editor tab",
         )
 
+    def wait_for_record_editor(self, before: TabSnapshot, title: str) -> EditorTab:
+        """The editor a list double-click showed for the record `title`: a NEW tab, or (found live:
+        Fakturama never opens a record twice) the record's already open tab, now selected. A tab
+        whose title merely shares the name but is not selected is never taken."""
+
+        def probe() -> EditorTab | None:
+            if tab := self._new_tab(before, title):
+                return tab
+            for folder, items in self._folders().items():
+                for index, item in enumerate(items):
+                    if str(item.element_info.name).lstrip("*") == title and is_selected(item):
+                        tab = EditorTab(folder, index)
+                        self._items[tab] = item
+                        return tab
+            return None
+
+        return wait_until(probe, timeout=self._ctx.settings.timeouts.element, what=f"the editor of '{title}'")
+
     def open_new(self, panel_key: str, toolbar_key: str) -> EditorTab:
         """Spec: click the entry in the left New panel. If that only re-focuses an existing editor (no
         fresh 'New ...' tab soon), use the equivalent toolbar button."""

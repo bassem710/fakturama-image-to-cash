@@ -22,14 +22,20 @@ from imagetocash.domain.matching import normalize_ocr_text
 from imagetocash.domain.review import ManualReviewRequired, ReviewReason
 from imagetocash.extraction.parsing import ParseError, parse_amount
 
+_ELLIPSIS = re.compile(r"(?:\s*\.){2,}\s*$|\s*…\s*$")
 _NUMERIC = re.compile(r"[\s$€%0-9.,/-]*[0-9][\s$€%0-9.,/-]*")  # an amount or percent, OCR '0/0' included
 
 
 def same_cell(shown: str, wanted: str) -> bool:
     """An OCR'd cell shows `wanted`: equal text (OCR-folded) or, when BOTH are plain amounts or
-    percentages, the same number ('19.00 %' / '19%'). Codes like 'A-100' never compare as numbers."""
-    if normalize_ocr_text(shown) == normalize_ocr_text(wanted):
+    percentages, the same number ('19.00 %' / '19%'). Codes like 'A-100' never compare as numbers. A
+    cell the column truncated ('Northstar Offic...') matches by its visible prefix (3+ characters)."""
+    seen, expected = normalize_ocr_text(shown), normalize_ocr_text(wanted)
+    if seen == expected:
         return True
+    if truncated := _ELLIPSIS.search(seen):  # OCR reads the ellipsis as '...', '..', '…' or '. . .'
+        prefix = seen[: truncated.start()].strip()
+        return len(prefix) >= 3 and expected.startswith(prefix)
     if not (_NUMERIC.fullmatch(shown) and _NUMERIC.fullmatch(wanted)):
         return False
     try:

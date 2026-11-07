@@ -114,6 +114,6 @@ books the same order twice.
 ## 9. Risks and what is left
 
 Partial earlier work (an Order without its Invoice) stops for review instead of being resumed, and the
-VAT code of a pre-existing rate is read by opening the rate (the list hides it), a path not yet run live.
+VAT code of a pre-existing rate is read by opening the rate (the list hides it; verified live).
 Both fail into a clear manual-review stop rather than a wrong record. Fakturama behaviours found during the live runs are listed
 with their handling in [control-map.md](control-map.md), under Gotchas.

@@ -132,7 +132,7 @@ Annotated screenshots of a full live run: [docs/evidence/](docs/evidence/README.
 ## Not done / next steps
 
 1. **Partial earlier work is not resumed.** An Order without its Invoice (e.g. a run stopped at 4.6) stops for manual review instead of finishing the Invoice. Resuming would need to open an existing document from the Documents list, which only works by double-click.
-2. **VAT code of a pre-existing rate: not yet verified live** (3.5). The list has no code column, so a rate named like the wanted one is opened by double-click (the pointer exception, row found by Name + Value), its `VAT code (E-Invoice)` is read, and its editor is left open unchanged. The reading path is unit-tested only; a live run against a database that already holds the rate is still to do.
+2. **VAT code of a pre-existing rate** (3.5): the list has no code column, so a rate named like the wanted one is opened by double-click (the pointer exception, row found by its Value; the opened editor's Name must equal the rate's), its `VAT code (E-Invoice)` is read, and its editor is left open unchanged. Verified live on 2026-11-07 (the second Product reuses the `VAT 19%` the first one created); a rate whose code is not S stops for review, which is covered by unit tests only.
 3. **Order-level discount / shipping from the image** (4.2) stops for review instead of being set.
 4. **The row choice** (selection dialogs, VAT list) is a double-click at a point measured inside the list element (the one pointer exception). The row is found on screen by its key column (Debtor No., Item No., VAT Name + Value); if that cell is not read exactly once, the run stops for review.
 5. Live runs so far: Fakturama 2.2.0, en_US, one machine (maximized window on 1920×1080 and 2560×1440

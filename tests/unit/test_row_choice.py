@@ -19,3 +19,15 @@ def test_ocr_percent_and_folded_characters_match() -> None:
 def test_codes_never_compare_as_numbers() -> None:
     assert not same_cell("A-100", "B-100")
     assert not same_cell("7", "17")
+
+
+def test_truncated_cell_matches_by_its_visible_prefix() -> None:
+    assert same_cell("Northstar Offic...", "Northstar Office GmbH")
+    assert not same_cell("No...", "Northstar Office GmbH")  # too short to tell records apart
+    assert not same_cell("Northstar Other...", "Northstar Office GmbH")
+
+
+def test_ocr_variants_of_the_ellipsis_count_as_truncation() -> None:
+    for shown in ("Ergonomic Des..", "Ergonomic Des. . .", "Ergonomic Des…"):
+        assert same_cell(shown, "Ergonomic Desk Chair")
+    assert not same_cell("Ergonomic Des.", "Ergonomic Desk Chair")  # one dot is not an ellipsis

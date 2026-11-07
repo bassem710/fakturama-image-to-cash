@@ -104,13 +104,22 @@ class VatListScreen(MasterDataListScreen):
         table = ctx.lists.table_in(workbench.content_pane(self._title))
         before = workbench.snapshot()
         open_row_with_pointer(table, ctx.ocr, self._columns, record, self._pick_fields)
-        try:
-            tab = workbench.wait_for_new(before)
-        except WaitTimeout as error:  # e.g. the rate's editor was already open and only got focus
+        name = record.get("name", "")
+        try:  # a new tab, or the rate's already open editor brought to the front (e.g. the one 3.6 saved)
+            tab = workbench.wait_for_record_editor(before, name)
+        except WaitTimeout as error:
             raise ManualReviewRequired(
-                "3.5", ReviewReason.UI_ELEMENT_NOT_FOUND, f"could not open {record.get('name')!r} to read its VAT code"
+                "3.5", ReviewReason.UI_ELEMENT_NOT_FOUND, f"could not open {name!r} to read its VAT code"
             ) from error
-        code = read_value(ctx.find("vat_editor", "code", scope=workbench.pane(tab)))
+        if workbench.is_dirty(tab):  # unsaved edits: the code on screen may not be the stored one
+            raise ManualReviewRequired("3.5", ReviewReason.CONFLICTING_MATCH, f"{name!r} has unsaved changes open")
+        pane = workbench.pane(tab)
+        shown_name = read_value(ctx.find("vat_editor", "name", scope=pane))
+        if normalize_ocr_text(shown_name) != normalize_ocr_text(name):  # the double-click opened another rate
+            raise ManualReviewRequired(
+                "3.5", ReviewReason.CONFLICTING_MATCH, f"opened {shown_name!r} instead of {name!r}"
+            )
+        code = read_value(ctx.find("vat_editor", "code", scope=pane))
         get_logger().info("3.5     VAT code of the existing rate read from its editor (left open, unchanged)")
         workbench.activate_view(self._title)
         return code

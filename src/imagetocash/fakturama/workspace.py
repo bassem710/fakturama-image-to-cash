@@ -50,7 +50,15 @@ def _running(exe: Path) -> bool:
 
 def _quit(settings: Settings) -> None:
     exe = settings.fakturama_exe
-    session = connect_session(settings, SelectorMap.load(settings.selectors_path))
+    selectors = SelectorMap.load(settings.selectors_path)
+    session = connect_session(settings, selectors)
+    # A manual-review stop leaves its selection dialog open on purpose (it changes nothing), and that
+    # modal dialog blocks quitting (found live): cancel it first. Cancel changes no data.
+    titles = {str(selectors.value("selection_dialogs", k)) for k in ("address_title", "product_title")}
+    cancel = str(selectors.value("selection_dialogs", "cancel")["name"])
+    for dialog in [d for d in session.dialogs() if d.element_info.name in titles]:
+        with contextlib.suppress(StopIteration):
+            next(b for b in dialog.descendants(control_type="Button") if b.element_info.name == cancel).invoke()
     session.main_wrapper().close()
 
     def gone() -> bool:
