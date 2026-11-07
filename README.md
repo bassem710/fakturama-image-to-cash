@@ -23,6 +23,20 @@ app, following the take-home spec step by step (1.1 → 5.7).
    `--from-json` to replay a saved extraction.
 5. Turn off Windows clipboard history and "Sync across your devices" (Settings > System > Clipboard).
    The tool reads lists by copying them to the clipboard.
+6. Set Fakturama's currency to EUR (see the warning below).
+
+> [!WARNING]
+> **Currency: an assumption only, not checked by the script.** The sample order image is priced in
+> **EUR**, so I assumed the Fakturama on your machine is set up to book in EUR. Fakturama books
+> every document in a single currency (File > Preferences > General > Currency locale), and a fresh
+> en_US install uses **USD**.
+>
+> The script does **not** check this. It doesn't compare the image's currency with Fakturama's, and
+> it never converts money: it enters the numbers as printed. On a USD setup the sample order would
+> be booked as 678.30 USD instead of 678.30 EUR, and the run would still report success.
+>
+> To match the sample, set **Currency locale** to a euro country (for example **Ireland**, which
+> keeps the English number format: `€1,234.57`) and click **Apply and Close** before running.
 
 Settings (model, timeouts, date and money formats) are in `config/settings.yaml`.
 
@@ -136,7 +150,12 @@ Design and trade-offs: [docs/design-doc.md](docs/design-doc.md).
 2. **Order-level discount or shipping** on the image (4.2) stops for review instead of being set.
 3. **A reused VAT rate whose code isn't S** stops for review. Only unit tests cover this; the normal
    path (code S) is verified live.
-4. **Tested live on one setup only:** Fakturama 2.2.0, en_US, a maximized window on 1920×1080 and
+4. **Currency is an assumption only, not checked by the script.** I assumed Fakturama books in EUR
+   because the sample image is in EUR (see the warning under Setup). The script doesn't compare the
+   image's currency with Fakturama's, so an order in another currency is booked with the same
+   numbers in Fakturama's currency. Next step: stop for manual review at 1.2 when the two differ,
+   and check the currency shown next to the line prices on screen.
+5. **Tested live on one setup only:** Fakturama 2.2.0, en_US, a maximized window on 1920×1080 and
    2560×1440 screens. Other window sizes and scaling are not verified live.
 
 ## Written question
