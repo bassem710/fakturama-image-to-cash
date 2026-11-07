@@ -1,5 +1,15 @@
 # Evidence: one full run on a clean workspace
 
+## Screen recording
+
+[full-run.mp4](full-run.mp4) (2 min, 1.3 MB): a complete live run recorded on 2026-11-07, Fakturama
+window only. It starts from a clean workspace with real Gemini extraction of `samples/order-page3.png`
+and goes through every creation branch to the paid Invoice. Exit 0, 71 spec steps. A caption at the bottom
+names the spec steps running at each moment, timed from that run's own log. The first ~10 s show
+Fakturama idle while Gemini reads the image and the duplicate guard checks Documents.
+
+## Annotated screenshots
+
 Annotated screenshots from a live run of `imagetocash run samples/order-page3.png` against Fakturama
 2.2.0 (en_US), starting from a clean workspace (`imagetocash reset-workspace --yes`). Every master record
 was missing, so this run takes every creation branch. Result: **exit 0, 71 spec steps, 110 s**.

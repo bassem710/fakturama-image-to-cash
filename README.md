@@ -50,7 +50,8 @@ imagetocash reset-workspace --yes                                               
 - `extracted.json`: what was read from the image (replay it with `--from-json`).
 
 Logs and the report mask customer values. Screenshots and `extracted.json` do not, so don't share
-`runs/` as a whole. An annotated example run is in [docs/evidence/](docs/evidence/README.md).
+`runs/` as a whole. An annotated example run is in [docs/evidence/](docs/evidence/README.md), with a
+[2-minute screen recording](docs/evidence/full-run.mp4) of a full run.
 
 ## What it does
 
@@ -106,7 +107,7 @@ Design and trade-offs: [docs/design-doc.md](docs/design-doc.md).
 | Design doc (Part 1) | [docs/design-doc.md](docs/design-doc.md) |
 | Source code in a Git repo | `src/imagetocash/`, tests in `tests/` |
 | Setup and run instructions | [Setup](#setup), [Run](#run) |
-| Annotated screenshots | [docs/evidence/](docs/evidence/README.md) |
+| Annotated screenshots or a short recording | Both: [screen recording of a full run](docs/evidence/full-run.mp4) (2 min, captioned by spec step) and [annotated screenshots](docs/evidence/README.md) |
 | What was skipped | [Not done / next steps](#not-done--next-steps) |
 | Written question | [Written question](#written-question) |
 
