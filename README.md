@@ -1,16 +1,17 @@
 # Fakturama Image-to-Cash
 
-Turns one order image into a saved, verified **Order** and linked **Invoice** in the Fakturama desktop
-app, following the take-home spec step by step (1.1 → 5.7). It uses **Microsoft UI Automation** to drive
-the app, **Gemini vision (Google AI Studio)** to read the image, and **Windows OCR** only as a fallback
-inside UI Automation rectangles. No hardcoded coordinates: every target comes from UIA at run time.
+Give it one order image. It books a verified **Order** and a linked **Invoice** in the Fakturama desktop
+app, following the take-home spec step by step (1.1 → 5.7).
+
+- **Gemini vision** reads the image.
+- **Microsoft UI Automation** drives Fakturama. There are no hardcoded coordinates.
+- **Windows OCR** is used only as a fallback, inside a control's UIA rectangle.
 
 ## Setup
 
-1. Windows 10/11, Python 3.12, Fakturama **2.2.0** (`C:\Program Files\Fakturama2`).
-2. Start Fakturama once and finish its first-run setup (workspace `C:\fakturama`, English UI). The app's
-   en_US formats (`Nov 6, 2026`, `$0.00`) are configured in `config/settings.yaml`.
-3. Get the code and install it:
+1. Install Windows 10/11, Python 3.12 and Fakturama **2.2.0** (`C:\Program Files\Fakturama2`).
+2. Start Fakturama once and finish its first-run setup: workspace `C:\fakturama`, English UI.
+3. Install the project:
    ```bash
    git clone https://github.com/bassem710/fakturama-image-to-cash.git
    cd fakturama-image-to-cash
@@ -18,130 +19,116 @@ inside UI Automation rectangles. No hardcoded coordinates: every target comes fr
    .venv\Scripts\python -m pip install -e ".[dev]"
    .venv\Scripts\activate
    ```
-4. Copy `.env.example` to `.env` and set `GEMINI_API_KEY` (Google AI Studio). The model is
-   `extraction.model` in `config/settings.yaml` (default `gemini-flash-lite-latest`; on an overload the
-   next model in `fallback_models` is tried after one retry). Without a key, `--from-json` (below)
-   replays a saved extraction.
-5. Privacy on the automation machine: lists are read by copying them to the Windows clipboard, so turn
-   off clipboard history and "Sync across your devices" (Settings > System > Clipboard). Logs and
-   `report.md` are masked, but `runs/<timestamp>/` (screenshots, `extracted.json`) and
-   `imagetocash inspect --out` hold order data in clear text: never share them whole.
+4. Copy `.env.example` to `.env` and set `GEMINI_API_KEY` (from Google AI Studio). No key? Use
+   `--from-json` to replay a saved extraction.
+5. Turn off Windows clipboard history and "Sync across your devices" (Settings > System > Clipboard).
+   The tool reads lists by copying them to the clipboard.
+
+Settings (model, timeouts, date and money formats) are in `config/settings.yaml`.
 
 ## Run
 
 ```bash
-imagetocash run samples/order-page3.png             # the full flow 1.1 -> 5.7
-imagetocash extract samples/order-page3.png         # spec 1.1-1.2 only, values masked
-imagetocash run samples/order-page3.png --from-json tests/fixtures/northstar_extracted.json   # replay, no LLM call
-imagetocash inspect --out runs/ui-tree.txt          # dump Fakturama's UIA tree for control mapping
-imagetocash reset-workspace --yes                   # test runs: restore the clean database (moves, never deletes)
+imagetocash run samples/order-page3.png
 ```
 
-**Exit codes:** `0` Order + Invoice saved and verified, or already processed · `2` stopped for manual
-review (spec step + reason) · `1` unexpected error.
+Other commands:
 
-**Every run leaves evidence and a report, whether it passes, stops for manual review or fails with an
-error.** It writes `runs/<timestamp>/` (git-ignored, contains order data):
-- `report.md`: one row per spec step (expected, observed, result, seconds) and the outcome: DONE,
-  ALREADY PROCESSED, MANUAL REVIEW at step X, or ERROR;
-- `steps.jsonl`: the same records as JSON lines, appended as each step finishes;
-- `run.log`: the full log, one JSON line per message, values masked;
-- `stage_N.png` after each completed stage, and `NN_<step>_failed.png` at the step that stopped or failed;
-- `extracted.json`: the extraction (once step 1.1 has read the image), replayable with `--from-json`.
+```bash
+imagetocash extract samples/order-page3.png                                                  # read the image only (spec 1.1-1.2)
+imagetocash run samples/order-page3.png --from-json tests/fixtures/northstar_extracted.json  # replay, no Gemini call
+imagetocash inspect --out runs/ui-tree.txt                                                   # dump Fakturama's UIA tree
+imagetocash reset-workspace --yes                                                            # restore the clean test database (moves the old one, never deletes)
+```
 
-The console shows one line per step, with values masked as `N***H (21 chars)`. An annotated example of
-a passing run is in [docs/evidence/](docs/evidence/README.md).
+**Exit codes:** `0` done (or already processed) · `2` stopped for manual review · `1` error.
 
-## Status
+**Results:** every run, pass or fail, writes `runs/<timestamp>/`:
+- `report.md`: one row per spec step and the outcome;
+- `steps.jsonl` and `run.log`: the same records as JSON;
+- screenshots after each stage and at the step that stopped;
+- `extracted.json`: what was read from the image (replay it with `--from-json`).
 
-| Part | State |
+Logs and the report mask customer values. Screenshots and `extracted.json` do not, so don't share
+`runs/` as a whole. An annotated example run is in [docs/evidence/](docs/evidence/README.md).
+
+## What it does
+
+| Situation | Result |
 |---|---|
-| Full live run 1.1 → 5.7 on a clean workspace | **Passes**: creates the Debtor, payment method, VAT 19 %, both Products, the Order and the paid Invoice, verifying each step. About **2 minutes**. |
-| Re-running the same image | **Changes nothing**: the duplicate guard (1.2.1) finds the booked Order + Invoice, verifies them and finishes "already processed" in a few seconds. |
-| New order of a known customer | Selects the existing Debtor, Products, VAT and payment method (no duplicates), books a new Order + Invoice. Tested on the in-memory Fakturama. |
-| Extraction (Gemini) | Live calls verified; outputs validated arithmetically before Fakturama is touched. |
-| Every manual-review stop | Tested on the in-memory Fakturama (`tests/workflow`). |
+| New order, clean workspace | Creates the Debtor, payment method, VAT rate and Products, then the Order and the paid Invoice. About 2 minutes on an idle machine (low free RAM can double it), verified live. |
+| Same image again | Changes nothing. Finds the booked Order and Invoice, checks them, exits "already processed". |
+| Known customer, new order | Reuses the existing records (no duplicates) and books a new Order and Invoice. |
+| Anything unclear (two matches, wrong totals, a record that doesn't show up) | Stops for manual review: logs why, takes a screenshot, exits `2`. |
+
+## How it works
+
+```
+cli ─▶ workflow (stages 1-5 = spec sections) ─▶ domain (pricing, validation, matching)
+          ├─▶ fakturama (screens, selectors.yaml) ─▶ automation (UIA, OCR, evidence)
+          └─▶ extraction (Gemini, parsing) ─▶ domain
+```
+
+- **One module per spec section** (`workflow/stage1_open_order.py` … `stage5_invoice.py`).
+- **Check the data first.** Every line, the totals and the payment date are checked with `Decimal`
+  math before Fakturama is touched.
+- **Check every step.** Each field is typed, read back and retried once; then the run stops for review.
+- **One matching rule** for Debtor, payment method, Product and VAT: one exact match → use it; none →
+  create it; anything else → stop.
+- **No duplicate bookings.** Before creating anything, step 1.2.1 looks for the image's External
+  Reference in Data > Documents.
+- **All UI names** are in `config/selectors.yaml`. Fakturama quirks are listed in
+  [docs/control-map.md](docs/control-map.md) under Gotchas.
+
+Design and trade-offs: [docs/design-doc.md](docs/design-doc.md).
+
+### Deliberate spec deviations
+
+1. **Step 1.2.1, the duplicate guard,** is an added read-only step.
+2. **The payment method is created before New Contact.** Fakturama doesn't show a method created
+   while a Debtor editor is open (gotcha 15).
+3. **Rows are chosen with a double-click.** In the two selection dialogs, and to open an existing VAT
+   rate, Fakturama accepts only a double-click. The click point is measured inside the list element
+   at run time. It's the one pointer action, in `fakturama/row_choice.py` (gotcha 7).
+
+## Tests
+
+```bash
+.venv\Scripts\python -m pytest          # 103 tests, no Fakturama or network needed
+.venv\Scripts\ruff check src tests
+.venv\Scripts\python -m mypy src
+```
 
 ## Deliverables
 
 | Asked for in the brief | Where |
 |---|---|
-| Part 1 design doc (1–4 pages, no code) | [docs/design-doc.md](docs/design-doc.md) |
-| Source code with a clear structure in a Git repo | `src/imagetocash/` (layers below), tests in `tests/` |
-| Setup instructions: dependencies and how to run against Fakturama | [Setup](#setup) and [Run](#run) above |
-| Annotated screenshots | [docs/evidence/](docs/evidence/README.md): a full live run, spec steps marked; every run also writes its own report and screenshots, pass or fail ([Run](#run)) |
-| README, with what was skipped | this file, [Not done / next steps](#not-done--next-steps) |
-| Written question (3 more hours) | [Written question](#written-question) |
-
-Spec deviations, all deliberate and documented: the duplicate guard 1.2.1 is an added read-only step;
-the payment method (2.10.1–2.10.6) is created just *before* New Contact, because Fakturama never shows a
-method created while a Debtor editor is open (control map gotcha 15); choosing a row in the two
-selection dialogs (and opening an existing VAT rate to read its code) is a double-click measured
-inside the list element, the one pointer action (gotcha 7).
-
-**Re-runs never book an order twice.** Before step 1.3 creates anything, step 1.2.1 searches Data >
-Documents for the image's External Reference. This is a read-only addition to the spec:
-
-| Found for this Cust.Ref. | Result |
-|---|---|
-| nothing | book it (1.3 → 5.7) |
-| one Order + one Invoice matching total, customer and states | "already processed", exit 0, nothing changed |
-| anything else (Order without Invoice, two Orders, another total, unpaid Invoice for a PAID order) | manual review, nothing changed |
-
-## How it works
-
-```
-cli ─▶ workflow (guard + stages 1-5 = spec sections) ─▶ domain (pricing, validation, matching; pure)
-          ├─▶ fakturama (screen objects, workbench, tables, selectors.yaml) ─▶ automation (UIA, OCR, evidence)
-          └─▶ extraction (Gemini vision, parsing) ─▶ domain
-```
-
-- **One stage per spec section** (`workflow/stage1_open_order.py` … `stage5_invoice.py`); every action and
-  check runs inside `evidence.spec_step("2.10.4", …)`. Stages depend only on `workflow/protocols.py`, so
-  the whole flow is tested against an in-memory Fakturama (`tests/workflow/fakes.py`).
-- **One decision rule** for Debtor (2.3), payment method (2.10.2), Product (3.3) and VAT (3.5)
-  (`workflow/resolver.py`):
-  - exactly one exact row → use it;
-  - several → stop (ambiguous);
-  - only near-misses → stop (conflicting);
-  - nothing → create, then require it to be selectable exactly once.
-- **Grounding, in order:**
-  1. UIA properties.
-  2. Label anchor (SWT fields are unnamed; their label is a sibling).
-  3. Position inside a labeled group ("upper icon beside Addresses").
-  4. Lists (NatTable) are read with their own copy binding; OCR inside the list's UIA rectangle is the fallback.
-
-  All names live in `config/selectors.yaml`. The single pointer exception (double-click on a dialog row) is documented in `fakturama/row_choice.py`.
-- **Money is `Decimal`.** The LLM returns amounts as printed strings. Code parses them and checks every line, the totals and the payment date **before Fakturama is touched**.
-- **Verify every step.** Fields are typed (so Fakturama's own listeners run, as for a person), read back, retried once, then stopped for review. Everything Fakturama does that is not obvious is in [docs/control-map.md](docs/control-map.md), under Gotchas.
-- **Fast without skipping checks.** An editor's tab and pane are kept once found, named lookups stop at the first match, and the verified Items line is returned instead of re-read.
-
-- **Dropdowns are searched.** Letters are typed until the combo shows the option, then one arrow away and back so Fakturama's binding takes it (letters alone saved the wrong country, gotcha 19); Up/Down is the fallback.
-
-Design rationale and trade-offs (Part 1 deliverable): [docs/design-doc.md](docs/design-doc.md).
-Annotated screenshots of a full live run: [docs/evidence/](docs/evidence/README.md).
-
-## Tests
-
-```bash
-.venv\Scripts\python -m pytest          # 82 tests, no Fakturama or network needed
-.venv\Scripts\ruff check src tests
-.venv\Scripts\python -m mypy src
-```
+| Design doc (Part 1) | [docs/design-doc.md](docs/design-doc.md) |
+| Source code in a Git repo | `src/imagetocash/`, tests in `tests/` |
+| Setup and run instructions | [Setup](#setup), [Run](#run) |
+| Annotated screenshots | [docs/evidence/](docs/evidence/README.md) |
+| What was skipped | [Not done / next steps](#not-done--next-steps) |
+| Written question | [Written question](#written-question) |
 
 ## Not done / next steps
 
-1. **Partial earlier work is not resumed.** An Order without its Invoice (e.g. a run stopped at 4.6) stops for manual review instead of finishing the Invoice. Resuming would need to open an existing document from the Documents list, which only works by double-click.
-2. **VAT code of a pre-existing rate** (3.5): the list has no code column, so a rate named like the wanted one is opened by double-click (the pointer exception, row found by its Value; the opened editor's Name must equal the rate's), its `VAT code (E-Invoice)` is read, and its editor is left open unchanged. Verified live on 2026-11-07 (the second Product reuses the `VAT 19%` the first one created); a rate whose code is not S stops for review, which is covered by unit tests only.
-3. **Order-level discount / shipping from the image** (4.2) stops for review instead of being set.
-4. **The row choice** (selection dialogs, VAT list) is a double-click at a point measured inside the list element (the one pointer exception). The row is found on screen by its key column (Debtor No., Item No., VAT Name + Value); if that cell is not read exactly once, the run stops for review.
-5. Live runs so far: Fakturama 2.2.0, en_US, one machine (maximized window on 1920×1080 and 2560×1440
-   screens). Other window sizes and scaling factors are not yet verified live.
+1. **Half-booked orders are not resumed.** An Order without its Invoice (for example, a run stopped at
+   4.6) stops for manual review instead of finishing the Invoice.
+2. **Order-level discount or shipping** on the image (4.2) stops for review instead of being set.
+3. **A reused VAT rate whose code isn't S** stops for review. Only unit tests cover this; the normal
+   path (code S) is verified live.
+4. **Tested live on one setup only:** Fakturama 2.2.0, en_US, a maximized window on 1920×1080 and
+   2560×1440 screens. Other window sizes and scaling are not verified live.
 
 ## Written question
 
 **If you had 3 more hours, what would you do?**
 
-1. **Resume instead of stop** (≈1.5 h): finish a partially booked order. Open the existing Order from Documents to create its missing Invoice, or open an unpaid Invoice to mark it paid, with the same checks as a fresh run.
-2. **Prove robustness** (≈45 min): run the sample at another window size and scaling, plus two more order images (one with an identical delivery address, one unpaid), and keep their evidence as regression fixtures.
-3. **Golden tests for the readers** (≈45 min): recorded NatTable copies and screenshots as fixtures for the list reader and the OCR fallback, so Fakturama-format changes fail in CI instead of live.
+1. **Resume instead of stop** (about 1.5 h). Finish a half-booked order: open the existing Order from
+   Documents and create its missing Invoice, or open an unpaid Invoice and mark it paid, with the same
+   checks as a fresh run.
+2. **Prove robustness** (about 45 min). Run at another window size and scaling, plus two more order
+   images (one unpaid, one with the same delivery address), and keep their evidence as regression
+   fixtures.
+3. **Golden tests for the list readers** (about 45 min). Save real list copies and screenshots as test
+   fixtures, so a change in Fakturama's format fails in CI instead of in a live run.

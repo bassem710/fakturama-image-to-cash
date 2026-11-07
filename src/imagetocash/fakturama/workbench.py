@@ -63,9 +63,10 @@ class Workbench:
         whose title merely shares the name but is not selected is never taken."""
 
         def probe() -> EditorTab | None:
-            if tab := self._new_tab(before, title):
+            folders = self._folders()  # one window scan per poll (~0.4 s each)
+            if tab := self._new_tab(before, title, folders):
                 return tab
-            for folder, items in self._folders().items():
+            for folder, items in folders.items():
                 for index, item in enumerate(items):
                     if str(item.element_info.name).lstrip("*") == title and is_selected(item):
                         tab = EditorTab(folder, index)
@@ -178,8 +179,10 @@ class Workbench:
             folders.setdefault(tuple(item.element_info.runtime_id), []).append(item)
         return folders
 
-    def _new_tab(self, before: TabSnapshot, title_prefix: str) -> EditorTab | None:
-        for folder, items in self._folders().items():
+    def _new_tab(
+        self, before: TabSnapshot, title_prefix: str, folders: dict[tuple[int, ...], list[Any]] | None = None
+    ) -> EditorTab | None:
+        for folder, items in (folders if folders is not None else self._folders()).items():
             if folder not in before:
                 continue
             for index in range(before[folder], len(items)):

@@ -53,6 +53,7 @@ class ScreenContext:
     ocr: OcrTableReader
     settings: Settings
     last_record_editor: EditorTab | None = None  # opened by a list's green + (VAT, payment method)
+    saved_vat_codes: dict[str, str] = field(default_factory=dict)  # VAT name -> code this run set (3.6)
     workbench: Workbench = field(init=False)
     lists: ListReader = field(init=False)
     _generation: int = 0

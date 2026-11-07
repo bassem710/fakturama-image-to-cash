@@ -21,7 +21,7 @@ from imagetocash.fakturama.workbench import EditorTab
 L = "lists"
 # An EMPTY search result is only believed once the list has stayed empty this long: while it
 # re-filters it can be blank for a moment, and "no rows" lets the caller CREATE a record.
-EMPTY_CONFIRM_SECONDS = 1.0
+EMPTY_CONFIRM_SECONDS = 0.5  # an OCR look takes 0.2-0.5 s: still two or more empty reads in a row
 
 
 class MasterDataListScreen:
@@ -94,9 +94,14 @@ class VatListScreen(MasterDataListScreen):
 
     def search(self, text: str) -> list[dict[str, str]]:
         rows = super().search(text)
-        for record in rows:
-            if normalize_ocr_text(record.get("name", "")) == normalize_ocr_text(text):
-                record["code"] = self._read_code(record)
+        named = [r for r in rows if normalize_ocr_text(r.get("name", "")) == normalize_ocr_text(text)]
+        known = self._ctx.saved_vat_codes.get(text)
+        if known is not None and len(named) == 1:  # the one rate of that name is the one 3.6 saved
+            named[0]["code"] = known
+            get_logger().info("3.5     VAT code known from 3.6 in this run (editor not reopened)")
+            return rows
+        for record in named:
+            record["code"] = self._read_code(record)
         return rows
 
     def _read_code(self, record: dict[str, str]) -> str:
@@ -162,5 +167,6 @@ class VatEditorScreen(RecordEditorScreen):
         code = self._field("code")
         if not read_value(code).strip().upper().startswith(standard[0]):
             select_combo_option(code, standard, spec_step="3.6", field_name="VAT code")
+        self._ctx.saved_vat_codes[name] = read_value(code)  # saved right after (3.6); reused at 3.5
         value = format(percent.normalize(), "f")
         set_and_verify(self._field("value"), value, spec_step="3.6", field_name="Value", normalize=number_text)
