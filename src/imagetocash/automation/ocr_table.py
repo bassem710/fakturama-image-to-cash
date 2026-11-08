@@ -165,11 +165,11 @@ def build_table(
         titles: dict[int, list[OcrWord]] = {}
         for word in titles_words:
             titles.setdefault(interval(word), []).append(word)
-        columns = [
-            (" ".join(w.text for w in ws), bounds[i - 1] if i > 0 else min(w.left for w in ws))
-            for i, ws in sorted(titles.items())
-        ]
         title_of = {i: " ".join(w.text for w in ws) for i, ws in titles.items()}
+        title_of |= _titles_by_position(title_of, len(bounds), expected_headers)
+        columns = [
+            (title, bounds[i - 1] if i > 0 else min(w.left for w in titles[i])) for i, title in sorted(title_of.items())
+        ]
         table_rows = []
         for row in body:
             cells: dict[str, list[str]] = {title: [] for title, _ in columns}
@@ -189,6 +189,33 @@ def build_table(
             cells[columns[starts[-1] if starts else 0][0]].append(word.text)
         table_rows.append(OcrTableRow({k: " ".join(v) for k, v in cells.items()}, middle_y=row[0].middle_y))
     return OcrTable(columns=tuple(columns), rows=tuple(table_rows))
+
+
+def _alnum_count(words: Sequence[OcrWord]) -> int:
+    return sum(ch.isalnum() for w in words for ch in w.text)
+
+
+def _titles_by_position(
+    title_of: dict[int, str], interval_count: int, expected_headers: Sequence[str]
+) -> dict[int, str]:
+    """Name grid intervals whose title OCR missed, so their cells are not dropped: an untitled interval
+    between two read titles gets the expected title at the same offset, only when the read titles are
+    exactly as far apart in `expected_headers` as on screen (no unexpected column in between)."""
+    order = [normalize_text(h) for h in expected_headers]
+    found: dict[int, str] = {}
+    titled = sorted(title_of)
+    for i in range(1, interval_count):  # interval 0 lies left of the first grid line (row header)
+        if i in title_of:
+            continue
+        left = max((t for t in titled if t < i), default=None)
+        right = min((t for t in titled if t > i), default=None)
+        if left is None or right is None:
+            continue
+        a, b = normalize_text(title_of[left]), normalize_text(title_of[right])
+        if a not in order or b not in order or order.index(b) - order.index(a) != right - left:
+            continue
+        found[i] = expected_headers[order.index(a) + (i - left)]
+    return found
 
 
 def selection_bands(image: Image.Image, rect: ScreenRect, min_share: float = 0.25) -> list[tuple[float, float]]:
@@ -241,17 +268,35 @@ class OcrTableReader:
         image = self._ocr.capture(rect)
         words = self._ocr.read_image(image, rect)
         bands = selection_bands(image, rect)
-        if bands:  # selected rows: white text on blue reads badly; re-read those bands inverted
-
-            def in_band(word: OcrWord) -> bool:
-                return any(top <= word.middle_y <= bottom for top, bottom in bands)
-
+        if bands:  # selected rows: white text on blue often reads badly; re-read those bands inverted
             inverted = self._ocr.read_image(invert_bands(image, rect, bands), rect)
-            words = [w for w in words if not in_band(w)] + [w for w in inverted if in_band(w)]
+            for top, bottom in bands:  # per band, keep the read that recovered more characters (live
+                # 2026-11-08: plain 'CHR-ERG-OI', inverted 'CHR-ERG-O' on the solid-blue product row)
+                plain = [w for w in words if top <= w.middle_y <= bottom]
+                flipped = [w for w in inverted if top <= w.middle_y <= bottom]
+                if _alnum_count(flipped) > _alnum_count(plain):
+                    words = [w for w in words if not top <= w.middle_y <= bottom] + flipped
         rows = group_into_rows(words)
         separators: list[float] = []
         if rows:
             header = rows[find_header_row(rows, expected_headers)]
             top, bottom = min(w.top for w in header), max(w.bottom for w in header)
             separators = find_column_separators(image, rect, top - 3, bottom + 3)
+            words = self._with_header_reread(image, rect, words, top - 3, bottom + 3)
         return build_table(words, expected_headers, separators)
+
+    def _with_header_reread(
+        self, image: Image.Image, rect: ScreenRect, words: list[OcrWord], band_top: float, band_bottom: float
+    ) -> list[OcrWord]:
+        """OCR the header band again on its own. Read together with the rows, Windows OCR drops short
+        titles on the dark focused header (live, 2560x1440 @100%: 'ZIP' missing, 'address' -> 'ddress');
+        cropped alone it reads them. Keeps the first read if the re-read finds fewer header words."""
+        y0, y1 = max(0, int(band_top - rect.top)), min(image.height, int(band_bottom - rect.top) + 1)
+        if y1 - y0 < 4:
+            return words
+        band = ScreenRect(rect.left, rect.top + y0, rect.right, rect.top + y1)
+        reread = self._ocr.read_image(image.crop((0, y0, image.width, y1)), band)
+        old = [w for w in words if band_top <= w.middle_y <= band_bottom]
+        if len(reread) <= len(old):
+            return words
+        return [w for w in words if not band_top <= w.middle_y <= band_bottom] + reread

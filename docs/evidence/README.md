@@ -2,11 +2,11 @@
 
 ## Screen recording
 
-[full-run.mp4](full-run.mp4) (2 min, 1.3 MB): a complete live run recorded on 2026-11-07, Fakturama
-window only. It starts from a clean workspace with real Gemini extraction of `samples/order-page3.png`
-and goes through every creation branch to the paid Invoice. Exit 0, 71 spec steps. A caption at the bottom
-names the spec steps running at each moment, timed from that run's own log. The first ~10 s show
-Fakturama idle while Gemini reads the image and the duplicate guard checks Documents.
+[full-run.mp4](full-run.mp4) (2 min, 2.8 MB): a complete live run recorded on 2026-11-08, showing the
+screen area of the maximized Fakturama window, so its pop-up dialogs and dropdowns are visible. It starts
+from a clean workspace with real Gemini extraction of `samples/order-page3.png` and goes through every
+creation branch to the paid Invoice. Exit 0, 71 spec steps. The screen barely changes at first, while
+Gemini reads the image and the duplicate guard checks Documents, so captions explain the first 12 s only.
 
 ## Annotated screenshots
 

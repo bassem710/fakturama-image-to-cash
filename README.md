@@ -139,7 +139,7 @@ Design and trade-offs: [docs/design-doc.md](docs/design-doc.md).
 | Design doc (Part 1) | [docs/design-doc.md](docs/design-doc.md) |
 | Source code in a Git repo | `src/imagetocash/`, tests in `tests/` |
 | Setup and run instructions | [Setup](#setup), [Run](#run) |
-| Annotated screenshots or a short recording | Both: [screen recording of a full run](docs/evidence/full-run.mp4) (2 min, captioned by spec step) and [annotated screenshots](docs/evidence/README.md) |
+| Annotated screenshots or a short recording | Both: [screen recording of a full run](docs/evidence/full-run.mp4) (2 min) and [annotated screenshots](docs/evidence/README.md) |
 | What was skipped | [Not done / next steps](#not-done--next-steps) |
 | Written question | [Written question](#written-question) |
 
